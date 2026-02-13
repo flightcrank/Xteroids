@@ -582,7 +582,7 @@ void init_asteroids(Asteroid *asteroids) {
 			asteroids[i].model.scale_s = 60.0f;
 			asteroids[i].alive = true;
 
-		} else if (i > 2 && i < 10) {
+		} else if (i > 2 && i < 12) {
 
 			asteroids[i].size = AST_MEDIUM;
 			asteroids[i].model.scale_s = 30.0f;
