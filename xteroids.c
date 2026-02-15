@@ -13,6 +13,7 @@
 
 #define NUM_ASTEROIDS 39
 #define NUM_BULLETS 4
+#define NUM_STARS 100
 
 #define SHIP_SPEED_LIMIT 3.5f
 #define SHIP_ACCEL 0.035f
@@ -30,9 +31,11 @@ void update_bullets(Bullet *bullets, double delta_time);
 void init_ship(Ship *ship);
 void init_asteroids(Asteroid *asteroids);
 void init_bullets(Bullet *bullets);
+void init_stars(Model3D *stars);
 void draw_asteroids(App *app, Asteroid *asteroids, int hw, int hh);
 void draw_bullets(App *app, Bullet *bullets, int hw, int hh);
 void draw_lives(App *app, Ship *lives, int num_lives, int hw, int hh);
+void draw_stars(App *app, Model3D *model);
 void check_collisions(Ship *ship, Asteroid *asteroids, Bullet *bullets);
 float random_float(float min, float max);
 
@@ -42,6 +45,10 @@ typedef enum {
     WIN_SCREEN,      
     GAME_OVER      
 } GameState;
+
+
+Vector3 star_verts[NUM_STARS];	
+Vector3 star_verts_s[NUM_STARS];	
 
 GameState current_state = TITLE_SCREEN;
 static bool keys[65536];
@@ -60,6 +67,7 @@ int main () {
 	App app;
 	Ship ship;
 	Ship lives;
+	Model3D stars = {0};
 	Model3D title = {0};
 	Asteroid asteroids[NUM_ASTEROIDS];
 	Bullet bullets[NUM_BULLETS];
@@ -73,6 +81,7 @@ int main () {
 	init_ship(&lives);
 	init_asteroids(asteroids);
 	init_bullets(bullets);
+	init_stars(&stars);
 	load_font(&fontmap, "fontmap.png", f_map, 8, 16);
 	lives.model.scale_s = 15.0f;
 
@@ -111,11 +120,14 @@ int main () {
 			case TITLE_SCREEN:
 				
 				//copy pixel_buffer to the xlib pixmap for display
-				char *play = "Press Space to Play";
+				char *play = "Press SPACE to Play";
 				int len = (strlen(play) * 8) / 2;
 
 				draw_string(&app, &fontmap, play, x - len, PBUF_HEIGHT - 100);
 				update_ximage(&app);
+				
+				project(&stars, hw, hh);
+				draw_stars(&app, &stars);
 				
 				update_asteroids(asteroids);
 				draw_asteroids(&app, asteroids, hw, hh);
@@ -135,6 +147,9 @@ int main () {
 				draw_string(&app, &fontmap, "Lives", 0, 0);
 				update_ximage(&app);
 				
+				project(&stars, hw, hh);
+				draw_stars(&app, &stars);
+				
 				project(&ship.model, hw, hh);
 				draw_mesh(&app, &ship.model);
 				draw_lives(&app, &lives, ship.lives, hw, hh);
@@ -149,9 +164,17 @@ int main () {
 				int leng = (strlen(over) * 8) / 2;
 				int len2 = (strlen(replay) * 8) / 2;
 
+				update_asteroids(asteroids);
+				
 				draw_string(&app, &fontmap, over, x - leng, y);
 				draw_string(&app, &fontmap, replay, x - len2, PBUF_HEIGHT - 100);
 				update_ximage(&app);
+				
+				project(&stars, hw, hh);
+				draw_stars(&app, &stars);
+				
+				draw_asteroids(&app, asteroids, hw, hh);
+				
 				break;
 
 			case WIN_SCREEN:
@@ -160,10 +183,18 @@ int main () {
 				char *replay2 = "Press SPACE to play again!";
 				int len3 = (strlen(win) * 8) / 2;
 				int len4 = (strlen(replay2) * 8) / 2;
+				
+				update_ship(&ship);
 
 				draw_string(&app, &fontmap, win, x - len3, y);
 				draw_string(&app, &fontmap, replay2, x - len4, PBUF_HEIGHT - 100);
 				update_ximage(&app);
+				
+				project(&stars, hw, hh);
+				draw_stars(&app, &stars);
+				
+				project(&ship.model, hw, hh);
+				draw_mesh(&app, &ship.model);
 				break;
 
 			default:
@@ -597,6 +628,23 @@ void init_asteroids(Asteroid *asteroids) {
 	}
 }
 
+void init_stars(Model3D *stars) {
+	
+	int hw = SCREEN_WIDTH / 2;
+	int hh = SCREEN_HEIGHT / 2;
+
+	stars->local_verts = &star_verts[0];
+	stars->screen_verts = &star_verts_s[0];
+	stars->scale_s = 1.0f;
+	stars->local_count = NUM_STARS;
+
+	for (int i = 0; i < NUM_STARS; i++) {
+
+		stars->local_verts[i].x = (rand() % SCREEN_WIDTH) - hw;
+		stars->local_verts[i].y = (rand() % SCREEN_HEIGHT) - hh;
+	}
+}
+
 void setModelDirection(Model3D *model, float amount) {
 
 	model->direction = (Vector3) {0.0f, 1.0f, 0.0f}; //default forward position
@@ -617,6 +665,14 @@ void project(Model3D *model, float hw, float hh) {
 
 		model->screen_verts[i].x = hw + ((translation.x / translation.z) * FOCAL_LENGTH);
 		model->screen_verts[i].y = hh - ((translation.y / translation.z) * FOCAL_LENGTH);
+	}
+}
+
+void draw_stars(App *app, Model3D *model) {
+
+	for(int i = 0; i < NUM_STARS; i++) {
+
+		draw_arc(app, model->screen_verts[i].x, model->screen_verts[i].y, 3, 3, 0, 64 * 360, 0xFFFFFFFF);
 	}
 }
 
