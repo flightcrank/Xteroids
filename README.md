@@ -18,6 +18,6 @@ gcc xteroids.c graphics.c -o xteroids -lX11 -lm
 ```
 
 ## Screenshots
-<img src="https://i.imgur.com/yFlNzA6.png" width="800" alt="Xteroids Menu">
-<img src="https://i.imgur.com/rHF5lEu.png" width="800" alt="Xteroids Gameplay">
+<img src="https://i.imgur.com/KR9HZgz.png" width="800" alt="Xteroids Menu">
+<img src="https://i.imgur.com/f9pmkJI.png" width="800" alt="Xteroids Gameplay">
 
