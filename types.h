@@ -79,6 +79,7 @@ typedef struct {
 
 	Model3D model;
 	int lives;
+	float spawn_time;
 } Ship;
 
 typedef struct {

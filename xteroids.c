@@ -4,6 +4,8 @@
 #include <unistd.h>
 #include <time.h>
 #include "graphics.h"
+#define MINIAUDIO_IMPLEMENTATION
+#include "miniaudio.h"
 
 #define SCREEN_WIDTH 1920
 #define SCREEN_HEIGHT 1080
@@ -39,6 +41,8 @@ typedef struct {
 	Asteroid asteroids[NUM_ASTEROIDS];
 	Bullet bullets[NUM_BULLETS];
 	Fontmap fontmap;
+	ma_engine audio;
+	ma_sound engine_sound;
 	float timer;
 	float game_end_time;
 	bool keys[65536];
@@ -97,6 +101,25 @@ int main () {
 	game_state.lives.scale_s = 15.0f;
 	game_state.engine.scale.x = game_state.ship.model.scale_s;
 
+	ma_engine_config engine_config;
+	engine_config = ma_engine_config_init();
+
+	// The default is often too low for some Linux audio drivers (ALSA/Pulse)
+	// Try 50 or even 100 to see if the gap vanishes
+	engine_config.periodSizeInMilliseconds = 100; 
+
+
+	// 1. Initialize the engine
+	ma_result result = ma_engine_init(&engine_config, &game_state.audio);
+	
+	if (result != MA_SUCCESS) {
+		
+		printf("Failed to initialize audio engine.\n");
+		return -1;
+	}
+
+	ma_sound_init_from_file(&game_state.audio, "engine.wav",  MA_SOUND_FLAG_DECODE | MA_SOUND_FLAG_ASYNC, NULL, NULL, &game_state.engine_sound);
+
 	if (init_x(&app, SCREEN_WIDTH, SCREEN_HEIGHT) != 0) {
 		
 		puts("init function failed");
@@ -150,9 +173,24 @@ int main () {
 				break;
 			
 			case MAIN_GAME:
+				
+				bool should_draw = true;
+				bool invincible = false;
+
+				float elapsed = game_state.timer - game_state.ship.spawn_time;
+
+				if (elapsed < 3.0f) {
+					
+					invincible = true;
+					should_draw = (fmodf(elapsed, 0.2f) > 0.1f);
+				}
+
+				if (!invincible) {
+					
+					//update ship and asteroids position, velocity etc
+					check_collisions(&game_state);
+				}
 		
-				//update ship and asteroids position, velocity etc
-				check_collisions(&game_state);
 				update_ship(&game_state);
 				update_asteroids(&game_state);
 				update_bullets(game_state.bullets, delta_time);
@@ -162,10 +200,13 @@ int main () {
 				
 				project(&game_state.stars, hw, hh);
 				draw_stars(&app, &game_state.stars);
-				
-				project(&game_state.ship.model, hw, hh);
-				draw_mesh(&app, &game_state.ship.model);
-				
+
+				if (should_draw) {
+					
+					project(&game_state.ship.model, hw, hh);
+					draw_mesh(&app, &game_state.ship.model);
+				}
+
 				if (current_blast_t > 0.0f) {
 					
 					project_vs(&game_state.engine, hw, hh);
@@ -245,6 +286,8 @@ int main () {
 	close_x(&app);
 	model3D_free(&game_state.ship.model);
 	
+	ma_engine_uninit(&game_state.audio);
+	
 	return 0;
 }
 
@@ -315,11 +358,12 @@ void process_events(App *app, GameState *gs, XEvent *ev, int *running) {
 				if (gs->current_state == TITLE_SCREEN) {
 
 					gs->current_state = MAIN_GAME;
+					gs->ship.spawn_time = gs->timer;
 
 				} else if (gs->current_state == GAME_OVER || gs->current_state == WIN_SCREEN) {
 					
 
-				if (gs->timer > gs->game_end_time + 1.0f) {
+					if (gs->timer > gs->game_end_time + 1.0f) {
 
 						gs->current_state = TITLE_SCREEN;
 						init_ship(&gs->ship);
@@ -342,6 +386,7 @@ void process_events(App *app, GameState *gs, XEvent *ev, int *running) {
 							gs->bullets[i].model.position = v3_add(gs->ship.model.position, b_offset);
 							gs->bullets[i].model.position.y = -gs->bullets[i].model.position.y;
 							gs->bullets[i].model.velocity = v3_multi(gs->ship.model.direction, b_vel);
+							ma_engine_play_sound(&gs->audio, "Shoot.wav", NULL);
 							break;
 						}
 					}
@@ -369,6 +414,11 @@ void process_events(App *app, GameState *gs, XEvent *ev, int *running) {
 		// direction is a unit vector, so we scale it by our 'thrust' amount
 		gs->ship.model.acceleration = v3_multi_s(gs->ship.model.direction, SHIP_ACCEL);
 
+		if (!ma_sound_is_playing(&gs->engine_sound)) {
+
+			ma_sound_start(&gs->engine_sound);
+		}
+
 		if (current_blast_t < 1.0f) current_blast_t += 0.01f;
 
 	} else {
@@ -376,6 +426,7 @@ void process_events(App *app, GameState *gs, XEvent *ev, int *running) {
 		// If no thrust key is held, acceleration is zero
 		// ship.velocity stays the same, so it drifts
 		gs->ship.model.acceleration = (Vector3){0, 0, 0};
+		ma_sound_stop(&gs->engine_sound);
 	
 		if (current_blast_t > 0.0f) current_blast_t -= 0.05f;
 	}
@@ -440,6 +491,8 @@ void check_collisions(GameState *gs) {
 			gs->ship.lives--;
 			gs->ship.model.position = (Vector3) {0};
 			gs->ship.model.velocity = (Vector3) {0};
+			gs->ship.spawn_time = gs->timer;
+			ma_engine_play_sound(&gs->audio, "Boom3.wav", NULL);
 			continue;
 		}
 
@@ -452,6 +505,7 @@ void check_collisions(GameState *gs) {
 			if (r && gs->asteroids[i].alive && gs->bullets[j].alive) { 
 				
 				gs->bullets[j] = (Bullet) {0};
+				ma_engine_play_sound(&gs->audio, "Boom3.wav", NULL);
 
 				if (gs->asteroids[i].size == AST_LARGE) {
 					
