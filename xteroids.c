@@ -45,6 +45,7 @@ typedef struct {
 	ma_sound engine_sound;
 	float timer;
 	float game_end_time;
+	float engine_pitch_t;
 	bool keys[65536];
 } GameState;
 
@@ -70,7 +71,7 @@ float random_float(float min, float max);
 Vector3 star_verts[NUM_STARS];	
 Vector3 star_verts_s[NUM_STARS];	
 float max_blast_length = 65.0f;
-float current_blast_t = 0.0f; 
+float current_blast_t = 0.0f;
 
 // Helper to get time in seconds
 double get_time_seconds() {
@@ -101,16 +102,7 @@ int main () {
 	game_state.lives.scale_s = 15.0f;
 	game_state.engine.scale.x = game_state.ship.model.scale_s;
 
-	ma_engine_config engine_config;
-	engine_config = ma_engine_config_init();
-
-	// The default is often too low for some Linux audio drivers (ALSA/Pulse)
-	// Try 50 or even 100 to see if the gap vanishes
-	engine_config.periodSizeInMilliseconds = 100; 
-
-
-	// 1. Initialize the engine
-	ma_result result = ma_engine_init(&engine_config, &game_state.audio);
+	ma_result result = ma_engine_init(NULL, &game_state.audio);
 	
 	if (result != MA_SUCCESS) {
 		
@@ -118,11 +110,12 @@ int main () {
 		return -1;
 	}
 
-	ma_sound_init_from_file(&game_state.audio, "engine.wav",  MA_SOUND_FLAG_DECODE | MA_SOUND_FLAG_ASYNC, NULL, NULL, &game_state.engine_sound);
+	ma_sound_init_from_file(&game_state.audio, "engine.wav", 0, NULL, NULL, &game_state.engine_sound);
+	ma_sound_set_looping(&game_state.engine_sound, MA_TRUE);
 
 	if (init_x(&app, SCREEN_WIDTH, SCREEN_HEIGHT) != 0) {
 		
-		puts("init function failed");
+		puts("init_x function failed");
 
 		return 1; 
 	}
@@ -410,16 +403,22 @@ void process_events(App *app, GameState *gs, XEvent *ev, int *running) {
 	}
 
 	if (gs->keys[XK_w] || gs->keys[XK_Up]) {
-		
-		// direction is a unit vector, so we scale it by our 'thrust' amount
-		gs->ship.model.acceleration = v3_multi_s(gs->ship.model.direction, SHIP_ACCEL);
+	
+		if (gs->current_state == MAIN_GAME || gs->current_state == WIN_SCREEN) {
 
-		if (!ma_sound_is_playing(&gs->engine_sound)) {
+			// direction is a unit vector, so we scale it by our 'thrust' amount
+			gs->ship.model.acceleration = v3_multi_s(gs->ship.model.direction, SHIP_ACCEL);
+			
+			if (gs->engine_pitch_t < 1.0f) gs->engine_pitch_t += 0.002f;
+			if (current_blast_t < 1.0f) current_blast_t += 0.01f;
 
-			ma_sound_start(&gs->engine_sound);
+			if (!ma_sound_is_playing(&gs->engine_sound)) {
+
+				ma_sound_start(&gs->engine_sound);
+			}
+
+			ma_sound_set_pitch(&gs->engine_sound, 1.0f * gs->engine_pitch_t);
 		}
-
-		if (current_blast_t < 1.0f) current_blast_t += 0.01f;
 
 	} else {
 
@@ -428,6 +427,7 @@ void process_events(App *app, GameState *gs, XEvent *ev, int *running) {
 		gs->ship.model.acceleration = (Vector3){0, 0, 0};
 		ma_sound_stop(&gs->engine_sound);
 	
+		gs->engine_pitch_t = 0.0f;
 		if (current_blast_t > 0.0f) current_blast_t -= 0.05f;
 	}
 
@@ -492,7 +492,7 @@ void check_collisions(GameState *gs) {
 			gs->ship.model.position = (Vector3) {0};
 			gs->ship.model.velocity = (Vector3) {0};
 			gs->ship.spawn_time = gs->timer;
-			ma_engine_play_sound(&gs->audio, "Boom3.wav", NULL);
+			ma_engine_play_sound(&gs->audio, "Boom39.wav", NULL);
 			continue;
 		}
 
