@@ -1,12 +1,12 @@
 # Xteroids ☄️
 
-A fast-paced, lightweight Asteroids clone written in pure C using **X11 (Xlib)**. No engines, no bloat—just math and pixels.
+A lightweight Asteroids clone written in pure C using **X11 (Xlib)** for Linux systems. 
 
 
 ## Features
-- **Pure C:** Zero external dependencies other than standard libraries and X11.
-- **Software Rendered:** Custom pixel-pushing via `XImage`.
-- **Lightweight:** The binary is tiny and optimized for performance.
+- **Pure C:** Zero external dependencies other than standard libraries and X11 and single header libs for images and sound.
+- **Software Rendered:** Xlib used for all gfx
+- **Lightweight:** The binary is pretty small at just over 1mb with sound engine included
 - **Retro Physics:** Classic floaty space momentum.
 
 ## Prerequisites

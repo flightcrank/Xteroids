@@ -4,6 +4,17 @@
 #include <unistd.h>
 #include <time.h>
 #include "graphics.h"
+#define MA_NO_GENERATION
+#define MA_NO_ENCODING
+#define MA_NO_MP3
+#define MA_NO_FLAC
+#define MA_NO_VORBIS
+#define MA_NO_PULSEAUDIO
+#define MA_NO_JACK
+#define MA_NO_COREAUDIO
+#define MA_NO_WASAPI
+#define MA_NO_DSOUND
+#define MA_NO_WINMM
 #define MINIAUDIO_IMPLEMENTATION
 #include "miniaudio.h"
 
@@ -15,7 +26,7 @@
 
 #define NUM_ASTEROIDS 39
 #define NUM_BULLETS 4
-#define NUM_STARS 100
+#define NUM_STARS 200
 
 #define SHIP_SPEED_LIMIT 3.5f
 #define SHIP_ACCEL 0.035f
@@ -82,26 +93,29 @@ double get_time_seconds() {
 	return (double)ts.tv_sec + (double)ts.tv_nsec / 1e9;
 }
 
+void init_game (GameState *gs) {
+	
+	init_ship(&gs->ship);
+	init_asteroids(gs->asteroids);
+	init_bullets(gs->bullets);
+	init_stars(&gs->stars);
+
+	char *f_map = "abcdefghijklmnopqrstuvwxyz      ABCDEFGHIJKLMNOPQRSTUVWXYZ      0123456789.:,;(*!?'/\\\")$%^&-+@~#";
+	load_font(&gs->fontmap, "./assets/fontmap.png", f_map, 8, 16);
+	load_ply(&gs->engine, "./assets/engine.ply");
+	load_ply(&gs->title, "./assets/title.ply");
+	load_ply(&gs->lives, "./assets/ship.ply");
+	gs->title.scale_s = 500.0f;
+	gs->lives.scale_s = 15.0f;
+	gs->engine.scale.x = gs->ship.model.scale_s;
+}
+
 int main () {
 
 	App app = {0};
 	GameState game_state = {0};
-
-	init_ship(&game_state.ship);
-	init_asteroids(game_state.asteroids);
-	init_bullets(game_state.bullets);
-	init_stars(&game_state.stars);
-
-	char *f_map = "abcdefghijklmnopqrstuvwxyz      ABCDEFGHIJKLMNOPQRSTUVWXYZ      0123456789.:,;(*!?'/\\\")$%^&-+@~#";
-
-	load_font(&game_state.fontmap, "fontmap.png", f_map, 8, 16);
-	load_ply(&game_state.engine, "engine.ply");
-	load_ply(&game_state.title, "title.ply");
-	load_ply(&game_state.lives, "ship.ply");
-	game_state.title.scale_s = 500.0f;
-	game_state.lives.scale_s = 15.0f;
-	game_state.engine.scale.x = game_state.ship.model.scale_s;
-
+	init_game(&game_state);
+	
 	ma_result result = ma_engine_init(NULL, &game_state.audio);
 	
 	if (result != MA_SUCCESS) {
@@ -110,7 +124,7 @@ int main () {
 		return -1;
 	}
 
-	ma_sound_init_from_file(&game_state.audio, "engine.wav", 0, NULL, NULL, &game_state.engine_sound);
+	ma_sound_init_from_file(&game_state.audio, "./assets/engine.wav", 0, NULL, NULL, &game_state.engine_sound);
 	ma_sound_set_looping(&game_state.engine_sound, MA_TRUE);
 
 	if (init_x(&app, SCREEN_WIDTH, SCREEN_HEIGHT) != 0) {
@@ -146,7 +160,7 @@ int main () {
 
 		switch (game_state.current_state) {
 
-			case TITLE_SCREEN:
+			case TITLE_SCREEN: {
 				
 				//copy pixel_buffer to the xlib pixmap for display
 				char *play = "Press SPACE to Play";
@@ -164,8 +178,9 @@ int main () {
 				project(&game_state.title, hw, hh);
 				draw_mesh(&app, &game_state.title);
 				break;
+			}
 			
-			case MAIN_GAME:
+			case MAIN_GAME: {
 				
 				bool should_draw = true;
 				bool invincible = false;
@@ -183,7 +198,7 @@ int main () {
 					//update ship and asteroids position, velocity etc
 					check_collisions(&game_state);
 				}
-		
+
 				update_ship(&game_state);
 				update_asteroids(&game_state);
 				update_bullets(game_state.bullets, delta_time);
@@ -210,8 +225,9 @@ int main () {
 				draw_asteroids(&app, game_state.asteroids, hw, hh);
 				draw_bullets(&app, game_state.bullets, hw, hh);
 				break;
+			}
 
-			case GAME_OVER:
+			case GAME_OVER: {
 				
 				char *over = "GAME OVER";
 				char *replay = "Press SPACE to play again!";
@@ -230,8 +246,9 @@ int main () {
 				draw_asteroids(&app, game_state.asteroids, hw, hh);
 				
 				break;
+			}
 
-			case WIN_SCREEN:
+			case WIN_SCREEN: {
 				
 				char *win = "YOU WIN !!!";
 				char *replay2 = "Press SPACE to play again!";
@@ -256,6 +273,7 @@ int main () {
 				project(&game_state.ship.model, hw, hh);
 				draw_mesh(&app, &game_state.ship.model);
 				break;
+			}
 
 			default:
 				puts("unknown state");
@@ -375,11 +393,10 @@ void process_events(App *app, GameState *gs, XEvent *ev, int *running) {
 							Vector3 b_offset = v3_multi_s(gs->ship.model.direction, gs->ship.model.scale_s);
 
 							gs->bullets[i].alive = true;
-							//bullets[i].time_alive = 0;
 							gs->bullets[i].model.position = v3_add(gs->ship.model.position, b_offset);
 							gs->bullets[i].model.position.y = -gs->bullets[i].model.position.y;
 							gs->bullets[i].model.velocity = v3_multi(gs->ship.model.direction, b_vel);
-							ma_engine_play_sound(&gs->audio, "Shoot.wav", NULL);
+							ma_engine_play_sound(&gs->audio, "./assets/Shoot.wav", NULL);
 							break;
 						}
 					}
@@ -406,7 +423,6 @@ void process_events(App *app, GameState *gs, XEvent *ev, int *running) {
 	
 		if (gs->current_state == MAIN_GAME || gs->current_state == WIN_SCREEN) {
 
-			// direction is a unit vector, so we scale it by our 'thrust' amount
 			gs->ship.model.acceleration = v3_multi_s(gs->ship.model.direction, SHIP_ACCEL);
 			
 			if (gs->engine_pitch_t < 1.0f) gs->engine_pitch_t += 0.002f;
@@ -417,13 +433,12 @@ void process_events(App *app, GameState *gs, XEvent *ev, int *running) {
 				ma_sound_start(&gs->engine_sound);
 			}
 
-			ma_sound_set_pitch(&gs->engine_sound, 1.0f * gs->engine_pitch_t);
+			ma_sound_set_pitch(&gs->engine_sound, gs->engine_pitch_t);
 		}
 
 	} else {
 
 		// If no thrust key is held, acceleration is zero
-		// ship.velocity stays the same, so it drifts
 		gs->ship.model.acceleration = (Vector3){0, 0, 0};
 		ma_sound_stop(&gs->engine_sound);
 	
@@ -492,7 +507,7 @@ void check_collisions(GameState *gs) {
 			gs->ship.model.position = (Vector3) {0};
 			gs->ship.model.velocity = (Vector3) {0};
 			gs->ship.spawn_time = gs->timer;
-			ma_engine_play_sound(&gs->audio, "Boom39.wav", NULL);
+			ma_engine_play_sound(&gs->audio, "./assets/Boom39.wav", NULL);
 			continue;
 		}
 
@@ -505,7 +520,7 @@ void check_collisions(GameState *gs) {
 			if (r && gs->asteroids[i].alive && gs->bullets[j].alive) { 
 				
 				gs->bullets[j] = (Bullet) {0};
-				ma_engine_play_sound(&gs->audio, "Boom3.wav", NULL);
+				ma_engine_play_sound(&gs->audio, "./assets/Boom3.wav", NULL);
 
 				if (gs->asteroids[i].size == AST_LARGE) {
 					
@@ -671,7 +686,7 @@ void update_bullets(Bullet *bullets, double delta_time) {
 void init_ship(Ship *ship) {
 	
 	*ship = (Ship) {0};
-	load_ply(&ship->model, "ship.ply");
+	load_ply(&ship->model, "./assets/ship.ply");
 	ship->model.scale_s = 30.0f;
 	ship->model.direction = (Vector3) {0.0f, 1.0f, 0.0f}; //default forward position
 	ship->lives = 3;
@@ -697,7 +712,7 @@ void init_asteroids(Asteroid *asteroids) {
 		int hh = SCREEN_HEIGHT / 2;
 		
 		asteroids[i].model = (Model3D) {0};			
-		load_ply(&asteroids[i].model, "asteroid1.ply");
+		load_ply(&asteroids[i].model, "./assets/asteroid1.ply");
 		asteroids[i].spin = rand() % 2;
 		asteroids[i].model.position = (Vector3) {(rand() % SCREEN_WIDTH) - hw, (rand() % SCREEN_HEIGHT) - hh, 0.0f};
 		asteroids[i].model.velocity = (Vector3) {vx, vy, 0.0f};
@@ -900,7 +915,4 @@ void draw_lives(App *app, GameState *gs, int hw, int hh) {
 		x_offset += gs->lives.scale_s * 2;
 	}
 }
-
-
-
 
