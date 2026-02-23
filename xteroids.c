@@ -42,15 +42,14 @@ typedef enum {
 } GameScreen;
 
 typedef struct {
-	
-	GameScreen current_state;
-	Ship ship;
-	Model3D lives;
-	Model3D stars;
-	Model3D title;
-	Model3D engine;
+	GameScreen current_state;	//enum that keeps track of what screen the game should be rendering
+	Ship ship;			//struct that hold data for the player's ship
+	Engine engine;
 	Asteroid asteroids[NUM_ASTEROIDS];
 	Bullet bullets[NUM_BULLETS];
+	Model3D lives;			//struct that holds mesh data for the players's lives
+	Model3D stars;
+	Model3D title;
 	Fontmap fontmap;
 	ma_engine audio;
 	ma_sound engine_sound;
@@ -58,6 +57,7 @@ typedef struct {
 	float game_end_time;
 	float engine_pitch_t;
 	bool keys[65536];
+	bool space_pressed;
 } GameState;
 
 void process_events(App *app, GameState *gs, XEvent *ev, int *running);
@@ -81,8 +81,6 @@ float random_float(float min, float max);
 
 Vector3 star_verts[NUM_STARS];	
 Vector3 star_verts_s[NUM_STARS];	
-float max_blast_length = 65.0f;
-float current_blast_t = 0.0f;
 
 // Helper to get time in seconds
 double get_time_seconds() {
@@ -102,12 +100,72 @@ void init_game (GameState *gs) {
 
 	char *f_map = "abcdefghijklmnopqrstuvwxyz      ABCDEFGHIJKLMNOPQRSTUVWXYZ      0123456789.:,;(*!?'/\\\")$%^&-+@~#";
 	load_font(&gs->fontmap, "./assets/fontmap.png", f_map, 8, 16);
-	load_ply(&gs->engine, "./assets/engine.ply");
+	load_ply(&gs->engine.model, "./assets/engine.ply");
 	load_ply(&gs->title, "./assets/title.ply");
 	load_ply(&gs->lives, "./assets/ship.ply");
 	gs->title.scale_s = 500.0f;
 	gs->lives.scale_s = 15.0f;
-	gs->engine.scale.x = gs->ship.model.scale_s;
+	gs->engine.model.scale.x = gs->ship.model.scale_s;
+	gs->engine.max_blast_length = 65.0f;
+	gs->engine.current_blast_t;
+}
+
+void update_game_state(GameState *gs) {
+    
+	if (!gs->space_pressed)  {
+
+		return;
+	}
+
+	if (gs->current_state == TITLE_SCREEN) {
+	
+		gs->current_state = MAIN_GAME;
+		gs->ship.spawn_time = gs->timer;
+
+	} else if (gs->current_state == GAME_OVER || gs->current_state == WIN_SCREEN) {
+		
+		//reset game after short delay
+		if (gs->timer > gs->game_end_time + 2.0f) {
+
+			gs->current_state = TITLE_SCREEN;
+			init_ship(&gs->ship);
+			init_asteroids(gs->asteroids);
+			init_bullets(gs->bullets);
+			gs->engine.model.rotation = (Vector3){0};
+		}
+
+	} else if (gs->current_state == MAIN_GAME) {
+
+		// Bullet firing loop lives here now
+		for (int i = 0; i < NUM_BULLETS; i++) {
+
+			if (!gs->bullets[i].alive) {
+				
+				Vector3 b_vel = (Vector3){10.0f, -10.0f, 0.0f};
+				Vector3 b_offset = v3_multi_s(gs->ship.model.direction, gs->ship.model.scale_s);
+
+				gs->bullets[i].alive = true;
+				gs->bullets[i].model.position = v3_add(gs->ship.model.position, b_offset);
+				gs->bullets[i].model.position.y = -gs->bullets[i].model.position.y;
+				gs->bullets[i].model.velocity = v3_multi(gs->ship.model.direction, b_vel);
+				ma_engine_play_sound(&gs->audio, "./assets/Shoot.wav", NULL);
+				break;
+			}
+		}
+	}
+	
+	gs->space_pressed = false; // Reset the flag so we don't fire every frame
+}
+
+void screen_wrapping(Model3D *model) {
+
+	int hw = SCREEN_WIDTH / 2;
+	int hh = SCREEN_HEIGHT / 2;
+
+	if (model->position.x >  hw) model->position.x = -hw;
+	if (model->position.x < -hw) model->position.x =  hw;
+	if (model->position.y >  hh) model->position.y = -hh;
+	if (model->position.y < -hh) model->position.y =  hh;
 }
 
 int main () {
@@ -166,6 +224,8 @@ int main () {
 				char *play = "Press SPACE to Play";
 				int len = (strlen(play) * 8) / 2;
 
+				update_game_state(&game_state);
+
 				draw_string(&app, &game_state.fontmap, play, x - len, PBUF_HEIGHT - 100);
 				update_ximage(&app);
 				
@@ -199,6 +259,7 @@ int main () {
 					check_collisions(&game_state);
 				}
 
+				update_game_state(&game_state);
 				update_ship(&game_state);
 				update_asteroids(&game_state);
 				update_bullets(game_state.bullets, delta_time);
@@ -215,10 +276,10 @@ int main () {
 					draw_mesh(&app, &game_state.ship.model);
 				}
 
-				if (current_blast_t > 0.0f) {
+				if (game_state.engine.current_blast_t > 0.0f) {
 					
-					project_vs(&game_state.engine, hw, hh);
-					draw_mesh(&app, &game_state.engine);
+					project_vs(&game_state.engine.model, hw, hh);
+					draw_mesh(&app, &game_state.engine.model);
 				}
 				
 				draw_lives(&app, &game_state, hw, hh);
@@ -234,6 +295,7 @@ int main () {
 				int leng = (strlen(over) * 8) / 2;
 				int len2 = (strlen(replay) * 8) / 2;
 
+				update_game_state(&game_state);
 				update_asteroids(&game_state);
 				
 				draw_string(&app, &game_state.fontmap, over, x - leng, y);
@@ -255,6 +317,7 @@ int main () {
 				int len3 = (strlen(win) * 8) / 2;
 				int len4 = (strlen(replay2) * 8) / 2;
 				
+				update_game_state(&game_state);
 				update_ship(&game_state);
 
 				draw_string(&app, &game_state.fontmap, win, x - len3, y);
@@ -264,10 +327,10 @@ int main () {
 				project(&game_state.stars, hw, hh);
 				draw_stars(&app, &game_state.stars);
 				
-				if (current_blast_t > 0.0f) {
+				if (game_state.engine.current_blast_t > 0.0f) {
 					
-					project_vs(&game_state.engine, hw, hh);
-					draw_mesh(&app, &game_state.engine);
+					project_vs(&game_state.engine.model, hw, hh);
+					draw_mesh(&app, &game_state.engine.model);
 				}
 				
 				project(&game_state.ship.model, hw, hh);
@@ -315,140 +378,86 @@ int check_win(Asteroid *asteroids) {
 	return 1;
 }
 
+void key_press(GameState *gs) {
+}
+
 void process_events(App *app, GameState *gs, XEvent *ev, int *running) {
-	
+
 	while (XPending(app->d)) {
-	
+
 		XNextEvent(app->d, ev);
-		
-		//window manager event
+
 		if (ev->type == ClientMessage) {
 			
 			if (ev->xclient.data.l[0] == app->wmDeleteMessage) {
-			
+
 				*running = 0;
+				continue;
 			}
 		}
 
-		// resize event
 		if (ev->type == ConfigureNotify) {
-		
+
 			app->width = ev->xconfigure.width;
 			app->height = ev->xconfigure.height;
+			continue;
 		}
 
-		// Only do key logic if it's actually a key event
-		if (ev->type == KeyPress || ev->type == KeyRelease) {
+		if (ev->type == KeyRelease) {
 
 			KeySym k = XLookupKeysym(&ev->xkey, 0);
-
-			if (k < 65536) {
 			
-				if (ev->type == KeyPress) {
-					
-					gs->keys[k] = true;
-				} else {
+			if (k >= 65536) {
 
-					gs->keys[k] = false; // Forced off on KeyRelease
+				continue;
+			}
+
+			if (XPending(app->d)) {
+
+				XEvent nev;
+				XPeekEvent(app->d, &nev);
+
+				if (nev.type == KeyPress && nev.xkey.time == ev->xkey.time && nev.xkey.keycode == ev->xkey.keycode) {
+
+					XNextEvent(app->d, &nev);
+					continue;
 				}
 			}
 
-			// Handle one-shots
-			if (ev->type == KeyPress && k == XK_Escape) {
+			gs->keys[k] = false;
+			continue;
+		}
 
-				*running = 0;
-			}
+		if (ev->type == KeyPress) {
+
+			KeySym k = XLookupKeysym(&ev->xkey, 0);
 			
-			if (ev->type == KeyPress && k == XK_f) {
+			if (k >= 65536) {
+
+				continue;
+			}
+
+			if (gs->keys[k] == false) {
 				
-				toggle_fullscreen(app);
-			}
-			
-			if (ev->type == KeyPress && k == XK_space) {
-			
-				if (gs->current_state == TITLE_SCREEN) {
+				if (k == XK_space) {
 
-					gs->current_state = MAIN_GAME;
-					gs->ship.spawn_time = gs->timer;
+					gs->space_pressed = true;
+				}
 
-				} else if (gs->current_state == GAME_OVER || gs->current_state == WIN_SCREEN) {
+				if (k == XK_f) {
 					
-
-					if (gs->timer > gs->game_end_time + 1.0f) {
-
-						gs->current_state = TITLE_SCREEN;
-						init_ship(&gs->ship);
-						init_asteroids(gs->asteroids);
-						init_bullets(gs->bullets);
-						gs->engine.rotation = (Vector3) {0};
-					}
-
-				} else if (gs->current_state == MAIN_GAME) {
+					toggle_fullscreen(app);
+				}
 				
-					for (int i = 0; i < NUM_BULLETS; i++) {
-						
-						if (gs->bullets[i].alive == false) {
-							
-							Vector3 b_vel = (Vector3) {10.0f, -10.0f, 0.0f};
-							Vector3 b_offset = v3_multi_s(gs->ship.model.direction, gs->ship.model.scale_s);
-
-							gs->bullets[i].alive = true;
-							gs->bullets[i].model.position = v3_add(gs->ship.model.position, b_offset);
-							gs->bullets[i].model.position.y = -gs->bullets[i].model.position.y;
-							gs->bullets[i].model.velocity = v3_multi(gs->ship.model.direction, b_vel);
-							ma_engine_play_sound(&gs->audio, "./assets/Shoot.wav", NULL);
-							break;
-						}
-					}
+				if (k == XK_Escape) {
+					
+					*running = 0;
 				}
 			}
+
+			gs->keys[k] = true;
 		}
 	}
-	
-	//rotate ship to the left
-	if (gs->keys[XK_a] || gs->keys[XK_Left]) {
-		
-		setModelDirection(&gs->ship.model, .04f);
-		setModelDirection(&gs->engine, .04f);
-	}
-	
-	//rotate ship to the right
-	if (gs->keys[XK_d] || gs->keys[XK_Right]) {
-		
-		setModelDirection(&gs->ship.model, -.04f);
-		setModelDirection(&gs->engine, -.04f);
-	}
-
-	if (gs->keys[XK_w] || gs->keys[XK_Up]) {
-	
-		if (gs->current_state == MAIN_GAME || gs->current_state == WIN_SCREEN) {
-
-			gs->ship.model.acceleration = v3_multi_s(gs->ship.model.direction, SHIP_ACCEL);
-			
-			if (gs->engine_pitch_t < 1.0f) gs->engine_pitch_t += 0.002f;
-			if (current_blast_t < 1.0f) current_blast_t += 0.01f;
-
-			if (!ma_sound_is_playing(&gs->engine_sound)) {
-
-				ma_sound_start(&gs->engine_sound);
-			}
-
-			ma_sound_set_pitch(&gs->engine_sound, gs->engine_pitch_t);
-		}
-
-	} else {
-
-		// If no thrust key is held, acceleration is zero
-		gs->ship.model.acceleration = (Vector3){0, 0, 0};
-		ma_sound_stop(&gs->engine_sound);
-	
-		gs->engine_pitch_t = 0.0f;
-		if (current_blast_t > 0.0f) current_blast_t -= 0.05f;
-	}
-
-
-	float flicker = 1.0f + (sinf(gs->timer * 50.0f) * 0.05f); // 5% pulse
-	gs->engine.scale.y = (gs->ship.model.scale_s + (current_blast_t * max_blast_length)) * flicker;
 }
 
 int circles_touching(Vector3 p1, float r1, Vector3 p2, float r2) {
@@ -552,50 +561,82 @@ float random_float(float min, float max) {
 
 void update_ship(GameState *gs) {
 
+	//STATE MANAGEMENT
 	if (gs->current_state == MAIN_GAME && gs->ship.lives < 0) {
-		
+	
 		gs->current_state = GAME_OVER;
 		gs->game_end_time = gs->timer;
 	}
 
+	//INPUT PROCESSING
+	// Rotation
+	if (gs->keys[XK_a] || gs->keys[XK_Left]) {
+		
+		setModelDirection(&gs->ship.model, .04f);
+		setModelDirection(&gs->engine.model, .04f);
+	}
+	if (gs->keys[XK_d] || gs->keys[XK_Right]) {
+	
+		setModelDirection(&gs->ship.model, -.04f);
+		setModelDirection(&gs->engine.model, -.04f);
+	}
+
+	// Thrust & Engine Audio
+	bool is_pressing_thrust = gs->keys[XK_w] || gs->keys[XK_Up];
+	bool can_thrust = (gs->current_state == MAIN_GAME || gs->current_state == WIN_SCREEN);
+
+	if (is_pressing_thrust && can_thrust) {
+	
+		gs->ship.model.acceleration = v3_multi_s(gs->ship.model.direction, SHIP_ACCEL);
+
+		if (gs->engine_pitch_t < 1.0f) {
+		
+			gs->engine_pitch_t += 0.002f;
+		}
+
+		if (gs->engine.current_blast_t < 1.0f) {
+
+			gs->engine.current_blast_t += 0.01f;
+		}
+
+		if (!ma_sound_is_playing(&gs->engine_sound)) {
+
+			ma_sound_start(&gs->engine_sound);
+		}
+
+		ma_sound_set_pitch(&gs->engine_sound, gs->engine_pitch_t);
+
+	} else {
+
+		gs->ship.model.acceleration = (Vector3){0, 0, 0};
+		ma_sound_stop(&gs->engine_sound);
+		gs->engine_pitch_t = 0.0f;
+
+		if (gs->engine.current_blast_t > 0.0f) {
+			
+			gs->engine.current_blast_t -= 0.05f;
+		}
+	}
+
+	//PHYSICS INTEGRATION
 	gs->ship.model.velocity = v3_add(gs->ship.model.velocity, gs->ship.model.acceleration);
 	gs->ship.model.velocity = v3_limit_mag(gs->ship.model.velocity, SHIP_SPEED_LIMIT);
 	gs->ship.model.position = v3_add(gs->ship.model.position, gs->ship.model.velocity);
-	gs->engine.position = gs->ship.model.position;
 
-	int hw = SCREEN_WIDTH / 2;
-	int hh = SCREEN_HEIGHT / 2;
-	
-	//right
-	if (gs->ship.model.position.x > hw) {
+	// Keep engine attached to ship
+	gs->engine.model.position = gs->ship.model.position;
 
-		 gs->ship.model.position = (Vector3) {-hw, gs->ship.model.position.y, gs->ship.model.position.z};
-	}
+	// SCREEN WRAPPING
+	screen_wrapping(&gs->ship.model);
 
-	//top
-	if (gs->ship.model.position.y > hh) {
-		 
-		gs->ship.model.position = (Vector3) {gs->ship.model.position.x, -hh, gs->ship.model.position.z};
-	}
-	
-	//left
-	if (gs->ship.model.position.x < -hw) {
-	
-		gs->ship.model.position = (Vector3) {hw, gs->ship.model.position.y, gs->ship.model.position.z};
-	}
-	
-	//bottom
-	if (gs->ship.model.position.y < -hh ) {
-		 
-		gs->ship.model.position = (Vector3) {gs->ship.model.position.x, hh, gs->ship.model.position.z};
-	}
+	//VISUAL EFFECTS (Flicker)
+	float flicker = 1.0f + (sinf(gs->timer * 50.0f) * 0.05f); 
+	gs->engine.model.scale.y = (gs->ship.model.scale_s + (gs->engine.current_blast_t * gs->engine.max_blast_length)) * flicker;
+
 }
 
 void update_asteroids(GameState *gs) {
 
-	int hw = SCREEN_WIDTH / 2;
-	int hh = SCREEN_HEIGHT / 2;
-	
 	if (check_win(gs->asteroids)) {
 		
 		gs->current_state = WIN_SCREEN;
@@ -611,37 +652,12 @@ void update_asteroids(GameState *gs) {
 
 		//update rotation
 		gs->asteroids[i].model.rotation = v3_add(gs->asteroids[i].model.rotation, (Vector3){0.0f, 0.0f, n});
-
-		//right
-		if (gs->asteroids[i].model.position.x > hw) {
-
-			 gs->asteroids[i].model.position = (Vector3) {-hw, gs->asteroids[i].model.position.y, gs->asteroids[i].model.position.z};
-		}
-
-		//top
-		if (gs->asteroids[i].model.position.y > hh) {
-			 
-			gs->asteroids[i].model.position = (Vector3) {gs->asteroids[i].model.position.x, -hh, gs->asteroids[i].model.position.z};
-		}
 		
-		//left
-		if (gs->asteroids[i].model.position.x < -hw) {
-		
-			gs->asteroids[i].model.position = (Vector3) {hw, gs->asteroids[i].model.position.y, gs->asteroids[i].model.position.z};
-		}
-		
-		//bottom
-		if (gs->asteroids[i].model.position.y < -hh ) {
-			 
-			gs->asteroids[i].model.position = (Vector3) {gs->asteroids[i].model.position.x, hh, gs->asteroids[i].model.position.z};
-		}
+		screen_wrapping(&gs->asteroids[i].model);
 	}
 }
 
 void update_bullets(Bullet *bullets, double delta_time) {
-
-	int hw = SCREEN_WIDTH / 2;
-	int hh = SCREEN_HEIGHT / 2;
 
 	for (int i = 0; i < NUM_BULLETS; i++) {
 		
@@ -656,29 +672,7 @@ void update_bullets(Bullet *bullets, double delta_time) {
 				continue;
 			}
 
-			//right
-			if (bullets[i].model.position.x > hw) {
-
-				 bullets[i].model.position = (Vector3) {-hw, bullets[i].model.position.y, bullets[i].model.position.z};
-			}
-
-			//top
-			if (bullets[i].model.position.y > hh) {
-				 
-				bullets[i].model.position = (Vector3) {bullets[i].model.position.x, -hh, bullets[i].model.position.z};
-			}
-			
-			//left
-			if (bullets[i].model.position.x < -hw) {
-			
-				bullets[i].model.position = (Vector3) {hw, bullets[i].model.position.y, bullets[i].model.position.z};
-			}
-			
-			//bottom
-			if (bullets[i].model.position.y < -hh ) {
-				 
-				bullets[i].model.position = (Vector3) {bullets[i].model.position.x, hh, bullets[i].model.position.z};
-			}
+			screen_wrapping(&bullets[i].model);
 		}
 	}
 }

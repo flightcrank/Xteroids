@@ -98,4 +98,11 @@ typedef struct {
 	float time_alive;
 } Bullet;
 
+typedef struct {
+
+	Model3D model;
+	float max_blast_length;
+	float current_blast_t;
+} Engine;
+
 #endif
