@@ -164,6 +164,51 @@ void draw_line(App *app, int x1, int y1, int x2, int y2, unsigned long colour) {
 	XDrawLine(app->d, app->buffer, app->gc, x1, y1, x2, y2);
 }
 
+void draw_line_b(App *app, int x1, int y1, int x2, int y2, uint32_t colour){
+
+	//distance in pixels x/y are away from each other
+	int dx = abs(x1 - x2);
+	int dy = abs(y1 - y2);
+	
+	//direction x/y are from each other
+	int sx = (x1 < x2) ? 1 : -1;
+	int sy = (y1 < y2) ? 1 : -1;
+
+	int error = dx - dy;
+
+	while(1) {
+	
+		//bounds check
+		if (x1 >= 0 && x1 < app->pixel_buffer_w && y1 >= 0 && y1 < app->pixel_buffer_h) {
+			
+			//plot pixel
+			app->pixel_buffer[y1 * app->pixel_buffer_w + x1] = colour;
+		}
+
+		//line finished
+		if (x1 == x2 && y1 == y2) {
+			
+			break;
+		}
+		
+		int temp_error = 2 * error;
+		
+		//check x
+		if (temp_error > -dy) {
+
+			x1 += sx;
+			error -= dy;
+		}
+
+		//check y
+		if (temp_error < dx) {
+
+			y1 += sy;
+			error += dx;
+		}
+	}
+}
+
 void draw_arc(App *app, int x, int y, unsigned int width, unsigned int height, int angle1, int angle2, unsigned long colour) {
 
 	XSetForeground(app->d, app->gc, colour);
@@ -231,8 +276,8 @@ void load_font(Fontmap *fontmap, char *filename, char *f_map, int char_width, in
 
 	load_sprite(&fontmap->font_buffer, filename);
 	fontmap->f_map = f_map;
-	fontmap->char_width = 8;
-	fontmap->char_height = 16;
+	fontmap->char_width = char_width;
+	fontmap->char_height = char_height;
 }
 
 //draw sprite to screen buffer
@@ -325,31 +370,37 @@ void draw_string(App *app, Fontmap *fm, char *str, int x, int y) {
 //copy the buffer to a Ximage and scale it to the screen size
 void update_ximage(App *app) {
 
-	// Calculate how many screen pixels one buffer pixel occupies
-	float scale_x = (float)app->width / app->pixel_buffer_w;
-	float scale_y = (float)app->height / app->pixel_buffer_h;
+   // 1. Calculate ratios using your struct variables
+    // Source: pixel_buffer_w/h (960x540)
+    // Destination: width/height (1920x1080)
+    double step_x = (double)app->pixel_buffer_w / app->width;
+    double step_y = (double)app->pixel_buffer_h / app->height;
 
-	for (int y = 0; y < app->height; y++) {
+    for (int y = 0; y < app->height; y++) {
+        // Map window row to buffer row
+        int src_y = (int)(y * step_y);
+        
+        // OFFSET CALCULATION:
+        // This is where the 'center' bug lives. We MUST use pixel_buffer_w here.
+        // If app->pixel_buffer_w has been changed to 1920, this pointer 
+        // will jump way past the start of your data.
+        uint32_t *src_row = app->pixel_buffer + (src_y * app->pixel_buffer_w);
 
-		// Map current screen row back to the source buffer row
-		int src_y = (int)(y / scale_y);
-		uint32_t *src_row = &app->pixel_buffer[src_y * app->pixel_buffer_w];
+        // Map window row to XImage memory
+        uint32_t *dest_row = (uint32_t *)(app->ximage->data + (y * app->ximage->bytes_per_line));
 
-		// Get the destination row in the XImage
-		uint32_t *dest_row = (uint32_t *)(app->ximage->data + (y * app->ximage->bytes_per_line));
+        for (int x = 0; x < app->width; x++) {
+            int src_x = (int)(x * step_x);
+            
+            // Copy the pixel
+            dest_row[x] = src_row[src_x];
+        }
+    }
 
-		for (int x = 0; x < app->width; x++) {
-			// Map current screen column back to the source buffer column
-			int src_x = (int)(x / scale_x);
-	
-			// "Sample" the color from the buffer and drop it into the screen
-			dest_row[x] = src_row[src_x];
-		}
-	}
-	
-	// Upload the XImage (CPU RAM) to the Pixmap (X Server/VRAM) This takes whatever is in ximage->data and puts it in the Pixmap 
-	XPutImage(app->d, app->buffer, app->gc, app->ximage, 0, 0, 0, 0, app->width, app->height);	
+    XPutImage(app->d, app->buffer, app->gc, app->ximage, 0, 0, 0, 0, app->width, app->height);
+
 }
+
 
 void draw_pixel_buffer(App *app) {
 	
@@ -361,9 +412,38 @@ void draw_pixel_buffer(App *app) {
 	}
 }
 
-//load models mesh data
-void load_model3D(Model3D *model) {
+static inline void put_pixel(App *app, int x, int y, uint32_t color) {
 
-	
-	
+	//only draw pixel if it is within the bounds of the pixelbuffer
+	if (x >= 0 && x < PBUF_WIDTH && y >= 0 && y < PBUF_HEIGHT) {
+		
+		app->pixel_buffer[y * PBUF_WIDTH + x] = color;
+	}
 }
+
+void draw_filled_circle(App *app, int xc, int yc, int r, uint32_t color) {
+    int x = 0, y = r;
+    int d = 3 - 2 * r;
+
+    while (y >= x) {
+        // Just use a simple loop and the safe helper
+        for (int i = xc - x; i <= xc + x; i++) {
+            put_pixel(app, i, yc + y, color);
+            put_pixel(app, i, yc - y, color);
+        }
+        for (int i = xc - y; i <= xc + y; i++) {
+            put_pixel(app, i, yc + x, color);
+            put_pixel(app, i, yc - x, color);
+        }
+
+        if (d < 0) {
+            d = d + 4 * x + 6;
+        } else {
+            d = d + 4 * (x - y) + 10;
+            y--;
+        }
+        x++;
+    }
+}
+
+

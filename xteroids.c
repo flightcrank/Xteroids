@@ -47,6 +47,10 @@ typedef struct {
 	Engine engine;
 	Asteroid asteroids[NUM_ASTEROIDS];
 	Bullet bullets[NUM_BULLETS];
+	Mesh3D master_asteroid;
+	Mesh3D master_ship;
+	Mesh3D master_title;
+	Mesh3D master_stars;
 	Model3D lives;			//struct that holds mesh data for the players's lives
 	Model3D stars;
 	Model3D title;
@@ -61,17 +65,15 @@ typedef struct {
 } GameState;
 
 void process_events(App *app, GameState *gs, XEvent *ev, int *running);
-void project_vs(Model3D *model, float hw, float hh);
 void project(Model3D *model, float hw, float hh);
 void draw_mesh(App *app, Model3D *model);
 void setModelDirection(Model3D *model, float amount);
 void update_ship(GameState *gs);
 void update_asteroids(GameState *gs);
 void update_bullets(Bullet *bullets, double delta_time);
-void init_ship(Ship *ship);
-void init_asteroids(Asteroid *asteroids);
-void init_bullets(Bullet *bullets);
-void init_stars(Model3D *stars);
+void init_ship(GameState *gs);
+void init_asteroids(GameState *gs);
+void init_stars(GameState *gs);
 void draw_asteroids(App *app, Asteroid *asteroids, int hw, int hh);
 void draw_bullets(App *app, Bullet *bullets, int hw, int hh);
 void draw_lives(App *app, GameState *gs, int hw, int hh);
@@ -93,19 +95,29 @@ double get_time_seconds() {
 
 void init_game (GameState *gs) {
 	
-	init_ship(&gs->ship);
-	init_asteroids(gs->asteroids);
-	init_bullets(gs->bullets);
-	init_stars(&gs->stars);
+	init_ship(gs);
+	init_asteroids(gs);
+	init_stars(gs);
 
 	char *f_map = "abcdefghijklmnopqrstuvwxyz      ABCDEFGHIJKLMNOPQRSTUVWXYZ      0123456789.:,;(*!?'/\\\")$%^&-+@~#";
-	load_font(&gs->fontmap, "./assets/fontmap.png", f_map, 8, 16);
-	load_ply(&gs->engine.model, "./assets/engine.ply");
-	load_ply(&gs->title, "./assets/title.ply");
-	load_ply(&gs->lives, "./assets/ship.ply");
-	gs->title.scale_s = 500.0f;
-	gs->lives.scale_s = 15.0f;
-	gs->engine.model.scale.x = gs->ship.model.scale_s;
+	load_font(&gs->fontmap, "./assets/fontmap.png", f_map, 16, 32);
+	
+	load_ply(&gs->engine.mesh, "./assets/engine.ply");
+	gs->engine.model.mesh = &gs->engine.mesh;
+	gs->engine.model.screen_verts = malloc(gs->engine.mesh.local_count * sizeof(Vector3));
+	
+	load_ply(&gs->master_title, "./assets/title.ply");
+	gs->title.mesh = &gs->master_title;
+	gs->title.screen_verts = malloc(gs->master_title.local_count * sizeof(Vector3));
+	
+	load_ply(&gs->master_ship, "./assets/ship.ply");
+	gs->lives.mesh = &gs->master_ship;
+	gs->lives.screen_verts = malloc(gs->master_ship.local_count * sizeof(Vector3));
+
+	gs->title.scale = (Vector3) {500.0f, 500.0f, 500.0f};
+	gs->lives.scale = (Vector3) {15.0f, 15.0f, 15.0f};
+	gs->engine.model.scale.x = gs->ship.model.scale.x;
+	gs->engine.model.offset.y = -25.0f;
 	gs->engine.max_blast_length = 65.0f;
 	gs->engine.current_blast_t;
 }
@@ -128,9 +140,8 @@ void update_game_state(GameState *gs) {
 		if (gs->timer > gs->game_end_time + 2.0f) {
 
 			gs->current_state = TITLE_SCREEN;
-			init_ship(&gs->ship);
-			init_asteroids(gs->asteroids);
-			init_bullets(gs->bullets);
+			init_ship(gs);
+			init_asteroids(gs);
 			gs->engine.model.rotation = (Vector3){0};
 		}
 
@@ -159,8 +170,8 @@ void update_game_state(GameState *gs) {
 
 void screen_wrapping(Model3D *model) {
 
-	int hw = SCREEN_WIDTH / 2;
-	int hh = SCREEN_HEIGHT / 2;
+	int hw = PBUF_WIDTH / 2;
+	int hh = PBUF_HEIGHT / 2;
 
 	if (model->position.x >  hw) model->position.x = -hw;
 	if (model->position.x < -hw) model->position.x =  hw;
@@ -195,14 +206,15 @@ int main () {
 	int running = 1;
 	XEvent ev;
 	
-	float hw = (float) app.width / 2.0f;	//half the window width
-	float hh = (float) app.height / 2.0f;	//half the window height
+	float hw = (float) app.pixel_buffer_w / 2.0f;	
+	float hh = (float) app.pixel_buffer_h / 2.0f;
 	float angle = 0.0f;
 	double last_time = get_time_seconds();
 	double target_time = 1.0 / 60.0;
 	int x = PBUF_WIDTH / 2;
 	int y = PBUF_HEIGHT / 2;
-	
+	int chrw = game_state.fontmap.char_width;
+
 	while (running) {
 
 		double frame_start = get_time_seconds();
@@ -222,21 +234,22 @@ int main () {
 				
 				//copy pixel_buffer to the xlib pixmap for display
 				char *play = "Press SPACE to Play";
-				int len = (strlen(play) * 8) / 2;
+				int len = (strlen(play) * chrw) / 2;
 
 				update_game_state(&game_state);
+				update_asteroids(&game_state);
 
 				draw_string(&app, &game_state.fontmap, play, x - len, PBUF_HEIGHT - 100);
-				update_ximage(&app);
 				
 				project(&game_state.stars, hw, hh);
 				draw_stars(&app, &game_state.stars);
 				
-				update_asteroids(&game_state);
-				draw_asteroids(&app, game_state.asteroids, hw, hh);
+				//draw_asteroids(&app, game_state.asteroids, hw, hh);
 				
 				project(&game_state.title, hw, hh);
 				draw_mesh(&app, &game_state.title);
+				
+				update_ximage(&app);
 				break;
 			}
 			
@@ -264,12 +277,11 @@ int main () {
 				update_asteroids(&game_state);
 				update_bullets(game_state.bullets, delta_time);
 				
-				draw_string(&app, &game_state.fontmap, "Lives", 0, 0);
-				update_ximage(&app);
-				
 				project(&game_state.stars, hw, hh);
 				draw_stars(&app, &game_state.stars);
-
+				
+				draw_string(&app, &game_state.fontmap, "Lives", 0, 0);
+				
 				if (should_draw) {
 					
 					project(&game_state.ship.model, hw, hh);
@@ -278,13 +290,14 @@ int main () {
 
 				if (game_state.engine.current_blast_t > 0.0f) {
 					
-					project_vs(&game_state.engine.model, hw, hh);
+					project(&game_state.engine.model, hw, hh);
 					draw_mesh(&app, &game_state.engine.model);
 				}
 				
 				draw_lives(&app, &game_state, hw, hh);
 				draw_asteroids(&app, game_state.asteroids, hw, hh);
 				draw_bullets(&app, game_state.bullets, hw, hh);
+				update_ximage(&app);
 				break;
 			}
 
@@ -292,21 +305,21 @@ int main () {
 				
 				char *over = "GAME OVER";
 				char *replay = "Press SPACE to play again!";
-				int leng = (strlen(over) * 8) / 2;
-				int len2 = (strlen(replay) * 8) / 2;
+				int leng = (strlen(over) * chrw) / 2;
+				int len2 = (strlen(replay) * chrw) / 2;
 
 				update_game_state(&game_state);
 				update_asteroids(&game_state);
 				
-				draw_string(&app, &game_state.fontmap, over, x - leng, y);
-				draw_string(&app, &game_state.fontmap, replay, x - len2, PBUF_HEIGHT - 100);
-				update_ximage(&app);
-				
 				project(&game_state.stars, hw, hh);
 				draw_stars(&app, &game_state.stars);
 				
+				draw_string(&app, &game_state.fontmap, over, x - leng, y);
+				draw_string(&app, &game_state.fontmap, replay, x - len2, PBUF_HEIGHT - 100);
+				
 				draw_asteroids(&app, game_state.asteroids, hw, hh);
 				
+				update_ximage(&app);
 				break;
 			}
 
@@ -314,27 +327,27 @@ int main () {
 				
 				char *win = "YOU WIN !!!";
 				char *replay2 = "Press SPACE to play again!";
-				int len3 = (strlen(win) * 8) / 2;
-				int len4 = (strlen(replay2) * 8) / 2;
+				int len3 = (strlen(win) * chrw) / 2;
+				int len4 = (strlen(replay2) * chrw) / 2;
 				
 				update_game_state(&game_state);
 				update_ship(&game_state);
 
-				draw_string(&app, &game_state.fontmap, win, x - len3, y);
-				draw_string(&app, &game_state.fontmap, replay2, x - len4, PBUF_HEIGHT - 100);
-				update_ximage(&app);
-				
 				project(&game_state.stars, hw, hh);
 				draw_stars(&app, &game_state.stars);
 				
+				draw_string(&app, &game_state.fontmap, win, x - len3, y);
+				draw_string(&app, &game_state.fontmap, replay2, x - len4, PBUF_HEIGHT - 100);
+				
 				if (game_state.engine.current_blast_t > 0.0f) {
 					
-					project_vs(&game_state.engine.model, hw, hh);
+					project(&game_state.engine.model, hw, hh);
 					draw_mesh(&app, &game_state.engine.model);
 				}
 				
 				project(&game_state.ship.model, hw, hh);
 				draw_mesh(&app, &game_state.ship.model);
+				update_ximage(&app);
 				break;
 			}
 
@@ -358,8 +371,9 @@ int main () {
 
 	//free resources use by program		
 	close_x(&app);
-	model3D_free(&game_state.ship.model);
-	
+	model3D_free(&game_state.master_ship);
+	model3D_free(&game_state.engine.mesh);
+	model3D_free(&game_state.master_title);
 	ma_engine_uninit(&game_state.audio);
 	
 	return 0;
@@ -376,9 +390,6 @@ int check_win(Asteroid *asteroids) {
 	}
 
 	return 1;
-}
-
-void key_press(GameState *gs) {
 }
 
 void process_events(App *app, GameState *gs, XEvent *ev, int *running) {
@@ -497,15 +508,12 @@ void spawn_asteroids(Asteroid *asteroids, Vector3 pos, asteroid_size_t a_size) {
 
 void check_collisions(GameState *gs) {
 
-	int hw = SCREEN_WIDTH / 2;
-	int hh = SCREEN_HEIGHT / 2;
-	
 	for(int i = 0; i < NUM_ASTEROIDS; i++) {
 
 		Vector3 ship_pos = gs->ship.model.position;
-		float ship_r = gs->ship.model.scale_s;
+		float ship_r = gs->ship.model.scale.x;
 		Vector3 ast_pos = gs->asteroids[i].model.position;
-		float ast_r = gs->asteroids[i].model.scale_s;
+		float ast_r = gs->asteroids[i].model.scale.x;
 
 		int r = circles_touching(ship_pos, ship_r, ast_pos , ast_r);
 
@@ -632,7 +640,6 @@ void update_ship(GameState *gs) {
 	//VISUAL EFFECTS (Flicker)
 	float flicker = 1.0f + (sinf(gs->timer * 50.0f) * 0.05f); 
 	gs->engine.model.scale.y = (gs->ship.model.scale_s + (gs->engine.current_blast_t * gs->engine.max_blast_length)) * flicker;
-
 }
 
 void update_asteroids(GameState *gs) {
@@ -677,24 +684,23 @@ void update_bullets(Bullet *bullets, double delta_time) {
 	}
 }
 
-void init_ship(Ship *ship) {
+void init_ship(GameState *gs) {
 	
-	*ship = (Ship) {0};
-	load_ply(&ship->model, "./assets/ship.ply");
-	ship->model.scale_s = 30.0f;
-	ship->model.direction = (Vector3) {0.0f, 1.0f, 0.0f}; //default forward position
-	ship->lives = 3;
+	load_ply(&gs->master_ship, "./assets/ship.ply");
+	
+	gs->ship = (Ship) {0};
+	gs->ship.model.mesh = &gs->master_ship;
+	gs->ship.model.screen_verts = malloc(gs->master_ship.local_count * sizeof(Vector3));
+	gs->ship.model.scale = (Vector3) {30.0f, 30.0f, 30.0f};
+	gs->ship.model.direction = (Vector3) {0.0f, 1.0f, 0.0f}; //default forward position
+	gs->ship.lives = 3;
 }
 
-void init_bullets(Bullet *bullets) {
-
-	for (int i = 0; i < NUM_BULLETS; i++) {
+void init_asteroids(GameState *gs) {
 	
-		bullets[i] = (Bullet) {0};
-	}
-}
-
-void init_asteroids(Asteroid *asteroids) {
+	Asteroid *asteroids = gs->asteroids;
+	
+	load_ply(&gs->master_asteroid, "./assets/asteroid1.ply");
 
 	for (int i = 0; i < NUM_ASTEROIDS; i++) {
 		
@@ -702,52 +708,54 @@ void init_asteroids(Asteroid *asteroids) {
 		float speed = 0.3f;
 		float vx = cosf(angle) * speed;
 		float vy = sinf(angle) * speed;
-		int hw = SCREEN_WIDTH / 2;
-		int hh = SCREEN_HEIGHT / 2;
+		int hw = PBUF_WIDTH / 2;
+		int hh = PBUF_HEIGHT / 2;
 		
-		asteroids[i].model = (Model3D) {0};			
-		load_ply(&asteroids[i].model, "./assets/asteroid1.ply");
+		asteroids[i].model = (Model3D) {0};
+		asteroids[i].model.mesh = &gs->master_asteroid;
+		asteroids[i].model.screen_verts = malloc(gs->master_asteroid.local_count * sizeof(Vector3));
 		asteroids[i].spin = rand() % 2;
-		asteroids[i].model.position = (Vector3) {(rand() % SCREEN_WIDTH) - hw, (rand() % SCREEN_HEIGHT) - hh, 0.0f};
+		asteroids[i].model.position = (Vector3) {(rand() % PBUF_WIDTH) - hw, (rand() % PBUF_HEIGHT) - hh, 0.0f};
 		asteroids[i].model.velocity = (Vector3) {vx, vy, 0.0f};
 		asteroids[i].model.rotation = (Vector3) {0.0f, 0.0f, 0.01f};
 
 		if (i < 3) {
 
 			asteroids[i].size = AST_LARGE;
-			asteroids[i].model.scale_s = 60.0f;
+			asteroids[i].model.scale = (Vector3) {60.0f, 60.0f, 60.0f};
 			asteroids[i].alive = true;
 
 		} else if (i > 2 && i < 12) {
 
 			asteroids[i].size = AST_MEDIUM;
-			asteroids[i].model.scale_s = 30.0f;
+			asteroids[i].model.scale = (Vector3) {30.0f, 30.0f, 30.0f};
 			asteroids[i].alive = false;
 
 		} else {
 
 			asteroids[i].size = AST_SMALL;
-			asteroids[i].model.scale_s = 15.0f;
+			asteroids[i].model.scale = (Vector3) {15.0f, 15.0f, 15.0f};
 			asteroids[i].alive = false;
 		}
 	}
 }
 
-void init_stars(Model3D *stars) {
+void init_stars(GameState *gs) {
 	
-	int hw = SCREEN_WIDTH / 2;
-	int hh = SCREEN_HEIGHT / 2;
+	int hw = PBUF_WIDTH / 2;
+	int hh = PBUF_HEIGHT / 2;
 
-	stars->local_verts = &star_verts[0];
-	stars->screen_verts = &star_verts_s[0];
-	stars->scale_s = 1.0f;
-	stars->local_count = NUM_STARS;
+	gs->stars.mesh = &gs->master_stars;
+	gs->stars.mesh->local_verts = &star_verts[0];
+	gs->stars.scale = (Vector3) {1.0f, 1.0f, 1.0f};
+	gs->stars.screen_verts = &star_verts_s[0];
+	gs->stars.mesh->local_count = NUM_STARS;
 
 	for (int i = 0; i < NUM_STARS; i++) {
 
-		stars->local_verts[i].x = (rand() % SCREEN_WIDTH) - hw;
-		stars->local_verts[i].y = (rand() % SCREEN_HEIGHT) - hh;
-		stars->local_verts[i].z = rand() % 100;
+		gs->stars.mesh->local_verts[i].x = (rand() % PBUF_WIDTH) - hw;
+		gs->stars.mesh->local_verts[i].y = (rand() % PBUF_HEIGHT) - hh;
+		gs->stars.mesh->local_verts[i].z = rand() % 100;
 	}
 }
 
@@ -758,34 +766,13 @@ void setModelDirection(Model3D *model, float amount) {
 	model->direction = v3_rotate(model->direction, model->rotation);
 }
 
-void project_vs(Model3D *model, float hw, float hh) {
-
-	float NOZZLE_OFFSET = -25.0f; 
-
-	for (int i = 0; i < model->local_count; i++) {
-
-		Vector3 scaled_model = v3_multi(model->local_verts[i], model->scale);
-
-
-		scaled_model.y += NOZZLE_OFFSET;
-
-		Vector3 rot_model = v3_rotate(scaled_model, model->rotation);
-		Vector3 translation = v3_add(rot_model, model->position);
-		
-		//push vert to focal length
-		translation.z += Z_OFFSET;
-
-		model->screen_verts[i].x = hw + ((translation.x / translation.z) * FOCAL_LENGTH);
-		model->screen_verts[i].y = hh - ((translation.y / translation.z) * FOCAL_LENGTH);
-	}
-}
-
 void project(Model3D *model, float hw, float hh) {
 	
-	for (int i = 0; i < model->local_count; i++) {
+	for (int i = 0; i < model->mesh->local_count; i++) {
 
-		Vector3 scaled_model = v3_multi_s(model->local_verts[i], model->scale_s); 
-		Vector3 rot_model = v3_rotate(scaled_model, model->rotation);
+		Vector3 scaled_model = v3_multi(model->mesh->local_verts[i], model->scale); 
+		Vector3 offset_model = v3_add(scaled_model, model->offset);
+		Vector3 rot_model = v3_rotate(offset_model, model->rotation);
 		Vector3 translation = v3_add(rot_model, model->position);
 		
 		//push vert to focal length
@@ -798,14 +785,14 @@ void project(Model3D *model, float hw, float hh) {
 
 void draw_stars(App *app, Model3D *model) {
 	
-	float max_size = 5;
+	float max_size = 2;
 	float min_size = 1;
 	float minZ = 500;
 	float maxZ = 600;
 
 	for(int i = 0; i < NUM_STARS; i++) {
 		
-		float z = FOCAL_LENGTH + model->local_verts[i].z;
+		float z = FOCAL_LENGTH + model->mesh->local_verts[i].z;
 
 		float size = max_size - ((z - minZ) / (maxZ - minZ)) * (max_size - min_size);
 		float t = (z - minZ) / (maxZ - minZ);
@@ -813,7 +800,7 @@ void draw_stars(App *app, Model3D *model) {
 
 		unsigned int colour = 0xFF000000 | (bright << 16) | (bright << 8) | bright;
 
-		draw_arc(app, model->screen_verts[i].x, model->screen_verts[i].y, size, size, 0, 64 * 360, colour);
+		draw_filled_circle(app, model->screen_verts[i].x, model->screen_verts[i].y, size, colour);
 	}
 }
 
@@ -822,38 +809,21 @@ void draw_mesh(App *app, Model3D *model) {
 	int offset = 0;
 
 	//draw each face of the mesh
-	for (int i = 0; i < model->facev_count; i++) {
+	for (int i = 0; i < model->mesh->facev_count; i++) {
 	
 		//verts per face
-		int n = model->facev[i];
+		int n = model->mesh->facev[i];
 
 		for (int j = 0; j < n; j++) {
 
-			//Get the first 3 vertex indices of this face
-			int i0 = model->meshf[offset];
-			int i1 = model->meshf[offset + 1];
-			int i2 = model->meshf[offset + 2];
+			int index_1 = model->mesh->meshf[offset + j];
+			int index_2 = model->mesh->meshf[offset + (j + 1) % n];
 
-			//Get their 2D Screen coordinates (already projected)
-			Vector3 p0 = model->screen_verts[i0];
-			Vector3 p1 = model->screen_verts[i1];
-			Vector3 p2 = model->screen_verts[i2];
+			Vector3 v1 = model->screen_verts[index_1];
+			Vector3 v2 = model->screen_verts[index_2];
 
-			//Calculate the "Side" (2D Cross Product)
-			//This tells us if the points are winding CCW or CW
-			float area = (p1.x - p0.x) * (p2.y - p0.y) - (p1.y - p0.y) * (p2.x - p0.x);
-
-			//if (area > 0) {
-			
-				int index_1 = model->meshf[offset + j];
-				int index_2 = model->meshf[offset + (j + 1) % n];
-
-				Vector3 v1 = model->screen_verts[index_1];
-				Vector3 v2 = model->screen_verts[index_2];
-
-				//draw line
-				draw_line(app, v1.x, v1.y, v2.x, v2.y, 0x0000ff00);
-			//}
+			//draw line
+			draw_line_b(app, v1.x, v1.y, v2.x, v2.y, 0x0000ff00);
 		}
 
 		offset += n;
@@ -885,10 +855,7 @@ void draw_bullets(App *app, Bullet *bullets, int hw, int hh) {
 			Vector3 trans = (Vector3) {0.0f + hw, 0.0f + hh, 0.0f};
 			Vector3 new_pos = v3_add(bullets[i].model.position, trans);
 			
-			float x = new_pos.x;
-			float y = new_pos.y;
-
-			draw_arc(app, (int) x, (int) y, 10, 10, 0, 64 * 360, 0xFFFFFFFF);
+			draw_filled_circle(app, new_pos.x, new_pos.y, 4, 0xFFFFFFFF);
 		}
 	}
 }
@@ -906,7 +873,7 @@ void draw_lives(App *app, GameState *gs, int hw, int hh) {
 
 		project(&gs->lives, hw, hh);
 		draw_mesh(app, &gs->lives);
-		x_offset += gs->lives.scale_s * 2;
+		x_offset += gs->lives.scale.x * 2;
 	}
 }
 

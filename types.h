@@ -57,10 +57,21 @@ typedef struct {
 
 } Vector3;
 
+//Struct for holding the data related to a 3D mesh
+typedef struct {
+
+	Vector3 *local_verts;	//Array of Vector3 structs to store the X,Y,Z positions of a vertex
+	int *facev;		//Array to store how many vertices each face has (3, 4, 5 ...  N faces)
+	int *meshf;		//Array of all the vertex indices for every face in the mesh
+	int local_count;	//int to store how many elements are in the vertex_array
+	int facev_count;	//int to store how many elements are in the face array	
+	int meshf_count;	//int to store how many elements are in the faces_array	
+} Mesh3D;
+
 //Struct for holding the data related to a instance of a 3D model
 typedef struct {
 	
-	Vector3 *local_verts;	//Array of Vector3 structs to store the X,Y,Z positions of a vertex
+	Mesh3D *mesh;
 	Vector3 *screen_verts;	//array holding the 2D screen space position of the 2d projected models vertices
 	Vector3 direction;	//vector that holds the direction vector of the model
 	Vector3 rotation;	//vector that holds the direction the model is facing
@@ -68,11 +79,7 @@ typedef struct {
 	Vector3 velocity;	//vector that describes the rate of change model will move in relative to its position
 	Vector3 acceleration;	//vector that describes the rate of change of the velocity
 	Vector3 scale;		//vector that describes scale of each axis
-	int *facev;		//Array to store how many vertices each face has (3, 4, 5 ...  N faces)
-	int *meshf;		//Array of all the vertex indices for every face in the mesh
-	int local_count;	//int to store how many elements are in the vertex_array
-	int facev_count;	//int to store how many elements are in the face array	
-	int meshf_count;	//int to store how many elements are in the faces_array	
+	Vector3 offset;		//vector that acts as an offset
 	float scale_s;		//the scale in pixels at which the object is rendered at
 } Model3D;
 
@@ -101,6 +108,7 @@ typedef struct {
 typedef struct {
 
 	Model3D model;
+	Mesh3D mesh;
 	float max_blast_length;
 	float current_blast_t;
 } Engine;

@@ -10,7 +10,7 @@
 //the max size in bytes this parser can read from a .ply file
 #define MAX_LINE 256
 
-static inline void load_ply(Model3D *model, char filename[]) {
+static inline void load_ply(Mesh3D *mesh, char filename[]) {
 
 	FILE *fptr;			//File pointer
 	char buffer[MAX_LINE];		//Temporary storage for each line
@@ -32,15 +32,15 @@ static inline void load_ply(Model3D *model, char filename[]) {
 		//search for the line starting with "element vertex" and save the number of vertices described. Allocate memory on the heap for each vertex in the mesh
 		if (strstr(buffer, "element vertex")) {
 			
-			sscanf(buffer, "%*s %*s %d", &model->local_count);
-			model->local_verts = malloc(model->local_count * sizeof(Vector3));
-			model->screen_verts = malloc(model->local_count * sizeof(Vector3));
+			sscanf(buffer, "%*s %*s %d", &mesh->local_count);
+			mesh->local_verts = malloc(mesh->local_count * sizeof(Vector3));
+			//model->screen_verts = malloc(model->local_count * sizeof(Vector3));
 			
-			if (model->local_verts == NULL || model->screen_verts == NULL) {
+			if (mesh->local_verts == NULL) {
 				
 				puts("Could not allocate memory for vert data");
-				free(model->local_verts);
-				free(model->screen_verts);
+				free(mesh->local_verts);
+				//free(model->screen_verts);
 				return;
 			}
 		}
@@ -48,10 +48,10 @@ static inline void load_ply(Model3D *model, char filename[]) {
 		//search for the line starting with "element face" and save the number of vertices that make up each face. Allocate memory on the heap to save this data to an array
 		if (strstr(buffer, "element face")) {
 			
-			sscanf(buffer, "%*s %*s %d", &model->facev_count);
-			model->facev = malloc(model->facev_count * sizeof(int));	
+			sscanf(buffer, "%*s %*s %d", &mesh->facev_count);
+			mesh->facev = malloc(mesh->facev_count * sizeof(int));	
 			
-			if (model->facev == NULL) {
+			if (mesh->facev == NULL) {
 				
 				puts("Could not allocate memory for face data");
 				return;
@@ -69,23 +69,23 @@ static inline void load_ply(Model3D *model, char filename[]) {
 		if (end_header) {
 			
 			//read vert data and store in an array of Vector3 structs on the heap
-			if (count < model->local_count) {
+			if (count < mesh->local_count) {
 				
 				//Save position in file where the last vert position is found and the face data begins
-				if (count == model->local_count - 1) {
+				if (count == mesh->local_count - 1) {
 					
 					position = ftell(fptr);
 				}
 				
-				sscanf(buffer, "%f %f %f", &model->local_verts[count].x, &model->local_verts[count].y, &model->local_verts[count].z);
+				sscanf(buffer, "%f %f %f", &mesh->local_verts[count].x, &mesh->local_verts[count].y, &mesh->local_verts[count].z);
 				count++;
-		
+
 			//read the face data and populate an array that stores the number of vertices per face. also keep track of how many vertex indices are needed to define every face in the mesh
-			} else if (count >= model->local_count) {
+			} else if (count >= mesh->local_count) {
 				
-				int index = count - model->local_count;
-				sscanf(buffer, "%i", &model->facev[index]);
-				model->meshf_count += model->facev[index];
+				int index = count - mesh->local_count;
+				sscanf(buffer, "%i", &mesh->facev[index]);
+				mesh->meshf_count += mesh->facev[index];
 				count++;
 
 			} else {
@@ -99,11 +99,11 @@ static inline void load_ply(Model3D *model, char filename[]) {
 	int index = 0;				
 	
 	//Allocate memory on the heap for the large array containing all the indices into the local_verts array for every face in the mesh
-	model->meshf = malloc(model->meshf_count * sizeof(int));
+	mesh->meshf = malloc(mesh->meshf_count * sizeof(int));
 	
-	if (model->meshf == NULL) {
+	if (mesh->meshf == NULL) {
 		
-		printf("Could not allocate memory for all the faces in the mesh object ( meshf_count = %d)", model->meshf_count);
+		printf("Could not allocate memory for all the faces in the mesh object ( meshf_count = %d)", mesh->meshf_count);
 		return;	
 	}
 	
@@ -112,7 +112,7 @@ static inline void load_ply(Model3D *model, char filename[]) {
 	
 	//Second pass: save face data in array
 	//loop through the lines in the file 
-	for (int i = 0; i < model->facev_count; i++) {
+	for (int i = 0; i < mesh->facev_count; i++) {
 		
 		fgets(buffer, MAX_LINE, fptr);	//read the line from the file which represents a single face in the mesh
 
@@ -123,10 +123,10 @@ static inline void load_ply(Model3D *model, char filename[]) {
 		start = next;			//set the new start point in the line buffer
 
 		//read "N" number of indices and save them to an array
-		for (int j = 0; j < model->facev[i]; j++) {
+		for (int j = 0; j < mesh->facev[i]; j++) {
 	
 			int value = (int) strtol(start, &next, 10);
-			model->meshf[index] = value;		//save value in the faces array where all vertex indices are saved for every face in the mesh
+			mesh->meshf[index] = value;		//save value in the faces array where all vertex indices are saved for every face in the mesh
 			start = next;					//set new start point in the line buffer
 			index++;					//increment to index into the faces_array
 		}
@@ -135,18 +135,17 @@ static inline void load_ply(Model3D *model, char filename[]) {
 	fclose(fptr); // Always close the file
 }
 
-static inline void model3D_free(Model3D *model) {
+static inline void model3D_free(Mesh3D *mesh) {
 	
-	if (model == NULL) {
+	if (mesh == NULL) {
 
 		return;
 	}
 
 	//free the malloc'd vertex, facev and meshf array
-	free(model->screen_verts);
-	free(model->local_verts);
-	free(model->facev);
-	free(model->meshf);
+	free(mesh->local_verts);
+	free(mesh->facev);
+	free(mesh->meshf);
 }
 
 #endif
