@@ -20,7 +20,7 @@ if you have make installed on your system, to compile just type
 make
 ```
 
-alternitivly just type the following command
+Alternatively just type the following command
 
 ```bash
 gcc xteroids.c graphics.c -o xteroids -lX11 -lm -lpthread -ldl
