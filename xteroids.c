@@ -492,7 +492,7 @@ void process_events(App *app, GameState *gs, XEvent *ev, int *running) {
 
 		if (ev->type == ClientMessage) {
 			
-			if (ev->xclient.data.l[0] == app->wmDeleteMessage) {
+			if ((Atom)ev->xclient.data.l[0] == app->wmDeleteMessage) {
 
 				*running = 0;
 				continue;
@@ -666,15 +666,13 @@ void draw_title(App *app, GameState *game_state) {
 
 	float hw = (float) app->pixel_buffer_w / 2.0f;	
 	float hh = (float) app->pixel_buffer_h / 2.0f;
-	int x = PBUF_WIDTH / 2;
-	int y = PBUF_HEIGHT / 2;
 	int chrw = game_state->fontmap.char_width;
 	
 	//copy pixel_buffer to the xlib pixmap for display
 	char *play = "Press SPACE to Play";
 	int len = (strlen(play) * chrw) / 2;
 
-	draw_string(app, &game_state->fontmap, play, x - len, PBUF_HEIGHT - 100);
+	draw_string(app, &game_state->fontmap, play, (int)hw - len, PBUF_HEIGHT - 100);
 	
 	project(&game_state->title, hw, hh);
 	draw_mesh(app, &game_state->title);
