@@ -13,8 +13,23 @@ A lightweight Asteroids clone written in pure C using **X11 (Xlib)** for Linux s
 To compile and run Xteroids, you need the X11 development libraries on Linux.
 
 ## To compile
+
+if you have make installed on your system, to compile just type
+
 ```bash
-gcc xteroids.c graphics.c -o xteroids -lX11 -lm
+make
+```
+
+alternitivly just type the following command
+
+```bash
+gcc xteroids.c graphics.c -o xteroids -lX11 -lm -lpthread -ldl
+```
+
+then to run the program type
+
+```bash
+./xteroids
 ```
 
 ## Screenshots
