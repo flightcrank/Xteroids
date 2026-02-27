@@ -88,6 +88,8 @@ typedef struct {
 	Model3D model;
 	int lives;
 	float spawn_time;
+	bool invincible;
+	bool should_draw;
 } Ship;
 
 typedef struct {
