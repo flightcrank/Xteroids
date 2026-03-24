@@ -32,7 +32,7 @@ then to run the program type
 ./xteroids
 ```
 
-## Screenshots
-<img src="https://i.imgur.com/KR9HZgz.png" width="800" alt="Xteroids Menu">
-<img src="https://i.imgur.com/f9pmkJI.png" width="800" alt="Xteroids Gameplay">
+## Screenshots 
+<img src="https://i.imgur.com/NVdwjAr.png" width="800" alt="Xteroids Menu">
+<img src="https://i.imgur.com/R3CfTGH.png" width="800" alt="Xteroids Gameplay">
 
