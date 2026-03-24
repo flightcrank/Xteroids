@@ -4,6 +4,7 @@
 #include <unistd.h>
 #include <time.h>
 #include "graphics.h"
+#include "noise.h"
 #define MA_NO_GENERATION
 #define MA_NO_ENCODING
 #define MA_NO_MP3
@@ -35,13 +36,15 @@
 #define TWO_PI 6.28318530717958647692f
 
 typedef enum {
-    TITLE_SCREEN, 
-    MAIN_GAME,      
-    WIN_SCREEN,      
-    GAME_OVER      
+
+	TITLE_SCREEN, 
+	MAIN_GAME,      
+	WIN_SCREEN,      
+	GAME_OVER      
 } GameScreen;
 
 typedef struct {
+
 	GameScreen current_state;	//enum that keeps track of what screen the game should be rendering
 	Ship ship;			//struct that hold data for the player's ship
 	Engine engine;
@@ -50,11 +53,17 @@ typedef struct {
 	Mesh3D master_asteroid;
 	Mesh3D master_ship;
 	Mesh3D master_title;
-	Mesh3D master_stars;
 	Model3D lives;			//struct that holds mesh data for the players's lives
-	Model3D stars;
 	Model3D title;
 	Fontmap fontmap;
+	Entity star_field[NUM_STARS];
+	Entity noise_cloud;
+	Sprite red_star_tex;
+	Sprite white_star_tex;
+	Sprite blue_star_tex;
+	Sprite purple_star_tex;
+	Sprite noise_tex;
+	Sprite space_fog;
 	ma_engine audio;
 	ma_sound engine_sound;
 	float timer;
@@ -64,11 +73,13 @@ typedef struct {
 	bool space_pressed;
 } GameState;
 
+void init_noise_tex(GameState *gs);
+void init_star_tex(Sprite *s, int w, int h, float r_exp, float g_exp, float b_exp);
 void init_ship(GameState *gs);
 void init_asteroids(GameState *gs);
 void init_stars(GameState *gs);
-void init_game (GameState *gs);
-void update_game_state(GameState *gs);
+void init_game(GameState *gs);
+void process_spacebar(GameState *gs);
 void update_logic(GameState *game_state, float delta_time);
 void update_ship(GameState *gs);
 void update_asteroids(GameState *gs);
@@ -77,7 +88,7 @@ void draw_title(App *app, GameState *game_state);
 void draw_ship(App *app, GameState *game_state);
 void draw_game_over(App *app, GameState *game_state);
 void draw_win(App *app, GameState *game_state);
-void draw_asteroids(App *app, Asteroid *asteroids, int hw, int hh);
+void draw_asteroids(App *app, Asteroid *asteroids);
 void draw_bullets(App *app, Bullet *bullets, int hw, int hh);
 void draw_lives(App *app, GameState *gs, int hw, int hh);
 void draw_stars(App *app, GameState *gs);
@@ -144,11 +155,26 @@ int main () {
 		//Calculate how much time we spent doing work
 		double frame_end = get_time_seconds();
 		double time_spent_working = frame_end - frame_start;
-
+		
 		//Sleep only if we have time left over
 		if (time_spent_working < target_time) {
 		
 			usleep((unsigned int)((target_time - time_spent_working) * 1000000));
+		}
+
+		// Calculate potential FPS (how fast it could go)
+		float potential_fps = 1.0f / (float)time_spent_working;
+
+		// Calculate actual FPS (how fast it is actually going)
+		float actual_fps = 1.0f / delta_time;
+
+		// Print it every 60 frames so it's readable
+		static int frame_count = 0;
+
+		if (++frame_count >= 60) {
+			
+			printf("Potential FPS: %.2f | Actual FPS: %.2f\n", potential_fps, actual_fps);
+			frame_count = 0;
 		}
 	}	
 
@@ -162,14 +188,91 @@ int main () {
 	return 0;
 }
 
+void init_noise_tex(GameState *gs) {
+	
+	//set up Value noise propertys
+	Value_noise vn = {0};
+	vn.cell_size = 128;
+	vn.width = 512;
+	vn.height = 512;
+	vn.bias = -180;
+	
+	//create the noise_tex sprite;
+	init_vnoise(&vn, &gs->noise_tex);
+
+	//create a new sprite the size of the screen and render the noise_tex into it using affine transforms
+	gs->space_fog.width = PBUF_WIDTH;
+	gs->space_fog.height = PBUF_HEIGHT;
+	gs->space_fog.pixels = malloc(sizeof(uint32_t) * (PBUF_WIDTH * PBUF_HEIGHT));
+
+	//set up the noise entity propertys
+	gs->noise_cloud = create_entity(ENT_SPRITE, 0, 0);
+	gs->noise_cloud.sprite = &gs->noise_tex;
+	gs->noise_cloud.pos = (Vector3) {PBUF_WIDTH / 2, PBUF_HEIGHT / 2, 0.0f};
+	gs->noise_cloud.scale = (Vector3) {4.0f, 2.1f, 0.0f};
+	gs->noise_cloud.tint = 0xFFFF00FF;
+	
+	//render the noise_tex into a new sprite
+	draw_sprite_affine(gs->space_fog.pixels, gs->space_fog.width, gs->space_fog.height, NORMAL, &gs->noise_cloud);
+}
+
+void init_star_tex(Sprite *s, int w, int h, float r_exp, float g_exp, float b_exp) {
+
+	s->width = w;
+	s->height = h;
+	s->pixels = malloc(sizeof(uint32_t) * (w * h));
+	
+	//center of texture
+	float cx = w / 2;
+	float cy = h / 2;
+	
+	//radius of falloff function
+	float radius = cx;
+
+	for(int y = 0; y < s->height; y++) {
+		
+		for(int x = 0; x < s->width; x++) {
+			
+			//dist to center
+			float dx = x - cx;
+			float dy = y - cy;
+
+			float dist = sqrt(dx * dx + dy * dy);
+			float intensity = 1.0f - (dist / radius);
+			
+			//clamp to 0 or above 
+			intensity = (intensity < 0) ? 0 : intensity;
+			
+			//falloff curve
+			intensity = intensity * intensity;
+
+
+			//calculate colour channel value
+			//uint8_t c = (uint8_t)(intensity * 255);
+
+			uint8_t r = (uint8_t)(pow(intensity, r_exp) * 255);
+			uint8_t g = (uint8_t)(pow(intensity, g_exp) * 255);
+			uint8_t b = (uint8_t)(pow(intensity, b_exp) * 255); 
+
+			//put into pixel buffer
+			s->pixels[y * s->width + x] = (0xFF << 24) | (r << 16) | (g << 8) | b;
+		}
+	}
+}
+
 void init_game (GameState *gs) {
 	
 	char *f_map = "abcdefghijklmnopqrstuvwxyz      ABCDEFGHIJKLMNOPQRSTUVWXYZ      0123456789.:,;(*!?'/\\\")$%^&-+@~#";
-	load_font(&gs->fontmap, "./assets/fontmap.png", f_map, 16, 32);
+	load_font(&gs->fontmap, "./assets/fontmap.png", f_map, 16, 32, 0xFF00FF00);
 	load_ply(&gs->master_ship, "./assets/ship.ply");
 	load_ply(&gs->master_asteroid, "./assets/asteroid1.ply");
 	load_ply(&gs->engine.mesh, "./assets/engine.ply");
 	load_ply(&gs->master_title, "./assets/title.ply");
+	init_star_tex(&gs->red_star_tex, 32, 32, 1.0, 1.6, 2.1);
+	init_star_tex(&gs->white_star_tex, 32, 32, 1.0, 1.0, 1.0);
+	init_star_tex(&gs->blue_star_tex, 32, 32, 2.0, 1.3, 1.0);
+	init_star_tex(&gs->purple_star_tex, 32, 32, 1.0, 2.0, 1.0);
+	init_noise_tex(gs);
 	
 	init_ship(gs);
 	init_asteroids(gs);
@@ -204,7 +307,6 @@ void init_ship(GameState *gs) {
 void init_asteroids(GameState *gs) {
 	
 	Asteroid *asteroids = gs->asteroids;
-	
 
 	for (int i = 0; i < NUM_ASTEROIDS; i++) {
 		
@@ -246,20 +348,38 @@ void init_asteroids(GameState *gs) {
 
 void init_stars(GameState *gs) {
 	
-	int hw = PBUF_WIDTH / 2;
-	int hh = PBUF_HEIGHT / 2;
+	for (int i =0; i < NUM_STARS; i++) {
+	
+		//generate random x, y values for the entity sprite
+		int x = rand() % PBUF_WIDTH;
+		int y = rand() % PBUF_HEIGHT;
+		int n = rand() % 100;
+		float s = (rand() % 100) / 99.0f;
+		s = 0.2f + (s * 0.25f);
 
-	gs->stars.mesh = &gs->master_stars;
-	gs->stars.mesh->local_verts = &star_verts[0];
-	gs->stars.scale = (Vector3) {1.0f, 1.0f, 1.0f};
-	gs->stars.screen_verts = &star_verts_s[0];
-	gs->stars.mesh->local_count = NUM_STARS;
+		//create the entity sprite with default values
+		gs->star_field[i] = create_entity(ENT_SPRITE, x, y);
 
-	for (int i = 0; i < NUM_STARS; i++) {
+		//assign a random scale value to the entity
+		gs->star_field[i].scale = (Vector3) {s, s, 0}; 
+		
+		//assign a random sprite texture to the entity
+		if (n < 70) {
+			
+			gs->star_field[i].sprite = &gs->white_star_tex;
 
-		gs->stars.mesh->local_verts[i].x = (rand() % PBUF_WIDTH) - hw;
-		gs->stars.mesh->local_verts[i].y = (rand() % PBUF_HEIGHT) - hh;
-		gs->stars.mesh->local_verts[i].z = rand() % 100;
+		} else if (n >= 70 && n <= 90) {
+			
+			gs->star_field[i].sprite = &gs->red_star_tex;
+
+		} else if (n >= 91 && n <= 98){
+			
+			gs->star_field[i].sprite = &gs->blue_star_tex;
+		
+		} else {
+			
+			gs->star_field[i].sprite = &gs->purple_star_tex;		
+		}
 	}
 }
 
@@ -398,56 +518,9 @@ void update_bullets(Bullet *bullets, double delta_time) {
 	}
 }
 
-void update_game_state(GameState *gs) {
-    
-	if (!gs->space_pressed)  {
-
-		return;
-	}
-
-	if (gs->current_state == TITLE_SCREEN) {
-	
-		gs->current_state = MAIN_GAME;
-		gs->ship.spawn_time = gs->timer;
-
-	} else if (gs->current_state == GAME_OVER || gs->current_state == WIN_SCREEN) {
-		
-		//reset game after short delay
-		if (gs->timer > gs->game_end_time + 2.0f) {
-
-			gs->current_state = TITLE_SCREEN;
-			init_ship(gs);
-			init_asteroids(gs);
-			gs->engine.model.rotation = (Vector3){0};
-		}
-
-	} else if (gs->current_state == MAIN_GAME) {
-
-		// Bullet firing loop lives here now
-		for (int i = 0; i < NUM_BULLETS; i++) {
-
-			if (!gs->bullets[i].alive) {
-				
-				Vector3 b_vel = (Vector3){10.0f, -10.0f, 0.0f};
-				Vector3 b_offset = v3_multi_s(gs->ship.model.direction, gs->ship.model.scale_s);
-
-				gs->bullets[i].alive = true;
-				gs->bullets[i].model.position = v3_add(gs->ship.model.position, b_offset);
-				gs->bullets[i].model.position.y = -gs->bullets[i].model.position.y;
-				gs->bullets[i].model.velocity = v3_multi(gs->ship.model.direction, b_vel);
-				ma_engine_play_sound(&gs->audio, "./assets/Shoot.wav", NULL);
-				break;
-			}
-		}
-	}
-	
-	gs->space_pressed = false; // Reset the flag so we don't fire every frame
-}
-
-
 void update_logic(GameState *game_state, float delta_time) {
 
-	update_game_state(game_state);
+	process_spacebar(game_state);
 
 	switch (game_state->current_state) {
 
@@ -563,33 +636,78 @@ void process_events(App *app, GameState *gs, XEvent *ev, int *running) {
 	}
 }
 
+void process_spacebar(GameState *gs) {
+
+	// If space isn't pressed, we have nothing to do here.
+	if (!gs->space_pressed) {
+
+		return;
+	}
+
+	// Handle the input based on where we are in the game
+	switch (gs->current_state) {
+
+		case TITLE_SCREEN:
+			
+			gs->current_state = MAIN_GAME;
+			gs->ship.spawn_time = gs->timer;
+			break;
+
+
+		case MAIN_GAME:
+		
+			// Bullet firing logic
+			for (int i = 0; i < NUM_BULLETS; i++) {
+
+				if (!gs->bullets[i].alive) {
+				
+					Vector3 b_vel = {10.0f, -10.0f, 0.0f};
+					Vector3 b_offset = v3_multi_s(gs->ship.model.direction, gs->ship.model.scale.x);
+
+					gs->bullets[i].alive = true;
+					gs->bullets[i].model.position = v3_add(gs->ship.model.position, b_offset);
+					gs->bullets[i].model.position.y = -gs->bullets[i].model.position.y;
+					gs->bullets[i].model.velocity = v3_multi(gs->ship.model.direction, b_vel);
+
+					ma_engine_play_sound(&gs->audio, "./assets/Shoot.wav", NULL);
+					break; // Exit loop after firing one bullet
+				}
+			}
+
+			break;
+		
+		case WIN_SCREEN:
+
+		case GAME_OVER:
+			
+			// Only allow restart after a 2-second buffer
+			if (gs->timer > gs->game_end_time + 2.0f) {
+
+				gs->current_state = TITLE_SCREEN;
+				init_ship(gs);
+				init_asteroids(gs);
+				gs->engine.model.rotation = (Vector3){0};
+			}
+
+			break;
+	}
+
+	// Reset the flag at the very end so the player must press again
+	gs->space_pressed = false; 
+}
+
 void draw_stars(App *app, GameState *gs) {
 	
-	float max_size = 2;
-	float min_size = 1;
-	float minZ = 500;
-	float maxZ = 600;
-	float hw = (float) app->pixel_buffer_w / 2.0f;	
-	float hh = (float) app->pixel_buffer_h / 2.0f;
-	
-	//project to screen space before drawing to screen
-	project(&gs->stars, hw, hh);
-	
-	for(int i = 0; i < NUM_STARS; i++) {
+	//draw stars
+	for (int i =0; i < NUM_STARS; i++) {
 		
-		float z = FOCAL_LENGTH + gs->stars.mesh->local_verts[i].z;
-
-		float size = max_size - ((z - minZ) / (maxZ - minZ)) * (max_size - min_size);
-		float t = (z - minZ) / (maxZ - minZ);
-		int bright = (int)(255.0f - (t * (255.0f - 50.0f)));
-
-		unsigned int colour = 0xFF000000 | (bright << 16) | (bright << 8) | bright;
-
-		draw_filled_circle(app, gs->stars.screen_verts[i].x, gs->stars.screen_verts[i].y, size, colour);
+		draw_sprite_affine(app->pixel_buffer, app->pixel_buffer_w, app->pixel_buffer_h, ADDITIVE, &gs->star_field[i]);
 	}
 }
 
 void draw_mesh(App *app, Model3D *model) {
+
+	project(model, app->pixel_buffer_w / 2, app->pixel_buffer_h / 2);
 
 	int offset = 0;
 
@@ -615,12 +733,11 @@ void draw_mesh(App *app, Model3D *model) {
 	}
 }
 
-void draw_asteroids(App *app, Asteroid *asteroids, int hw, int hh) {
+void draw_asteroids(App *app, Asteroid *asteroids) {
 
 	//project asteroids to screen space and draw to screen
 	for (int i = 0; i < NUM_ASTEROIDS; i++) {
 		
-		project(&asteroids[i].model, hw, hh);
 
 		if (asteroids[i].alive) {
 
@@ -656,7 +773,6 @@ void draw_lives(App *app, GameState *gs, int hw, int hh) {
 		Vector3 trans = {-hw + 95 + x_offset, +hh - 15, 0.0f};
 		gs->lives.position = v3_add(gs->lives.position, trans);
 
-		project(&gs->lives, hw, hh);
 		draw_mesh(app, &gs->lives);
 		x_offset += gs->lives.scale.x * 2;
 	}
@@ -665,7 +781,6 @@ void draw_lives(App *app, GameState *gs, int hw, int hh) {
 void draw_title(App *app, GameState *game_state) {
 
 	float hw = (float) app->pixel_buffer_w / 2.0f;	
-	float hh = (float) app->pixel_buffer_h / 2.0f;
 	int chrw = game_state->fontmap.char_width;
 	
 	//copy pixel_buffer to the xlib pixmap for display
@@ -674,24 +789,18 @@ void draw_title(App *app, GameState *game_state) {
 
 	draw_string(app, &game_state->fontmap, play, (int)hw - len, PBUF_HEIGHT - 100);
 	
-	project(&game_state->title, hw, hh);
 	draw_mesh(app, &game_state->title);
 }
 
 void draw_ship(App *app, GameState *game_state) {
 
-	float hw = (float) app->pixel_buffer_w / 2.0f;	
-	float hh = (float) app->pixel_buffer_h / 2.0f;
-
 	if (game_state->ship.should_draw) {
 		
-		project(&game_state->ship.model, hw, hh);
 		draw_mesh(app, &game_state->ship.model);
 	}
 
 	if (game_state->engine.current_blast_t > 0.0f) {
 		
-		project(&game_state->engine.model, hw, hh);
 		draw_mesh(app, &game_state->engine.model);
 	}
 }
@@ -708,7 +817,7 @@ void draw_game_over(App *app, GameState *game_state) {
 
 	draw_string(app, &game_state->fontmap, over, (int)hw - leng, (int)hh);
 	draw_string(app, &game_state->fontmap, replay, (int)hw - len2, PBUF_HEIGHT - 100);
-	draw_asteroids(app, game_state->asteroids, hw, hh);
+	draw_asteroids(app, game_state->asteroids);
 }
 
 void draw_win(App *app, GameState *game_state) {
@@ -732,6 +841,7 @@ void draw_frame(App *app, GameState *game_state) {
 	
 	//drawing operations every frame
 	clear_screen(app, 0x000000);
+	draw_sprite(app, &game_state->space_fog, 0, 0);
 	draw_stars(app, game_state);
 	
 	//draw elements depending on the current game state 
@@ -748,7 +858,7 @@ void draw_frame(App *app, GameState *game_state) {
 			draw_string(app, &game_state->fontmap, "Lives", 0, 0);
 			draw_ship(app, game_state);
 			draw_lives(app, game_state, hw, hh);
-			draw_asteroids(app, game_state->asteroids, hw, hh);
+			draw_asteroids(app, game_state->asteroids);
 			draw_bullets(app, game_state->bullets, hw, hh);
 			break;
 		}
@@ -919,6 +1029,7 @@ void setModelDirection(Model3D *model, float amount) {
 	model->rotation.z += amount;
 	model->direction = v3_rotate(model->direction, model->rotation);
 }
+
 double get_time_seconds() {
 
 	struct timespec ts;

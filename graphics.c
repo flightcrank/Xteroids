@@ -6,17 +6,9 @@
 #include <stdlib.h>
 #include <stdio.h>
 #include "graphics.h"
-#define STBI_NO_JPEG
-#define STBI_NO_GIF
-#define STBI_NO_PSD
-#define STBI_NO_PIC
-#define STBI_NO_PNM
-#define STBI_NO_HDR
-#define STBI_NO_TGA
 #define STB_IMAGE_IMPLEMENTATION
 #include "stb_image.h"
-#define PLY_IMPLEMENTATION
-#include "ply.h"
+
 
 /* Function definitions */
 int init_x(App *app, int w, int h) {
@@ -85,7 +77,7 @@ int init_x(App *app, int w, int h) {
 	app->buffer = XCreatePixmap(app->d, app->w, app->width, app->height, wa.depth);
 
 	//listen for events
-	XSelectInput(app->d, app->w, ExposureMask | KeyPressMask | KeyReleaseMask | StructureNotifyMask | PointerMotionMask);
+	XSelectInput(app->d, app->w, ExposureMask | KeyPressMask | KeyReleaseMask |StructureNotifyMask | PointerMotionMask);
 	
 	//put the window on the screen
 	XMapWindow(app->d, app->w);
@@ -152,18 +144,6 @@ void close_x(App *app) {
 	}
 }
 
-void draw_line(App *app, int x1, int y1, int x2, int y2, unsigned long colour) {
-
-	XSetForeground(app->d, app->gc, colour);
-	
-	// LineSolid = 0, CapButt = 1, JoinMiter = 0
-	//XSetLineAttributes(app->d, app->gc, 4, LineSolid, CapButt, JoinMiter);
-	XSetLineAttributes(app->d, app->gc, 2, LineSolid, CapRound, JoinRound);
-
-	// This draws directly to your back-buffer Pixmap
-	XDrawLine(app->d, app->buffer, app->gc, x1, y1, x2, y2);
-}
-
 void draw_line_b(App *app, int x1, int y1, int x2, int y2, uint32_t colour){
 
 	//distance in pixels x/y are away from each other
@@ -207,6 +187,13 @@ void draw_line_b(App *app, int x1, int y1, int x2, int y2, uint32_t colour){
 			error += dx;
 		}
 	}
+}
+
+void draw_line(App *app, int x1, int y1, int x2, int y2, unsigned long colour) {
+
+	XSetForeground(app->d, app->gc, colour);
+	// This draws directly to your back-buffer Pixmap
+	XDrawLine(app->d, app->buffer, app->gc, x1, y1, x2, y2);
 }
 
 void draw_arc(App *app, int x, int y, unsigned int width, unsigned int height, int angle1, int angle2, unsigned long colour) {
@@ -272,12 +259,137 @@ int load_sprite(Sprite *s, char *filename) {
 }
 
 //loads a bitmapped font into a sprite and defines each chars width and height
-void load_font(Fontmap *fontmap, char *filename, char *f_map, int char_width, int char_height) {
+void load_font(Fontmap *fontmap, char *filename, char *f_map, int char_width, int char_height, uint32_t colour) {
 
 	load_sprite(&fontmap->font_buffer, filename);
 	fontmap->f_map = f_map;
 	fontmap->char_width = char_width;
 	fontmap->char_height = char_height;
+	fontmap->colour = colour;
+}
+
+Entity create_entity(Entity_type type, int x, int y) {
+	
+	//default entitiy values
+	Entity ent = {0};
+	ent.type = type;
+	ent.tint = 0xFFFFFFFF;
+	ent.scale = (Vector3) {1.0f, 1.0f, 1.0f};
+	ent.pos = (Vector3) {x, y, 1.0f};
+
+	return ent;
+}
+
+uint32_t apply_tint(uint32_t color, uint32_t tint) {
+
+	//Extract Color Channels
+	int cr = (color >> 16) & 0xFF;
+	int cg = (color >> 8)  & 0xFF;
+	int cb =  color        & 0xFF;
+
+	//Extract Tint Channels
+	int tr = (tint >> 16) & 0xFF;
+	int tg = (tint >> 8)  & 0xFF;
+	int tb =  tint        & 0xFF;
+
+	//Multiply and Normalize (Scale 0-65025 back to 0-255)
+	int r = (cr * tr) >> 8;
+	int g = (cg * tg) >> 8;
+	int b = (cb * tb) >> 8;
+
+	//Re-pack (Assuming Alpha is 0xFF)
+	return (0xFF << 24) | (r << 16) | (g << 8) | b;
+}
+
+void draw_sprite_affine(uint32_t *dest_buff, int w, int h, Render_mode rm, Entity *ent) {
+    
+	if (ent->type != ENT_SPRITE) return;
+	if (ent->tint == 0) return;
+
+	// Basis vectors
+	Vector3 i = {1.0f, 0.0f, 0.0f};
+	Vector3 j = {0.0f, 1.0f, 0.0f};
+
+	// Scale vector
+	i = v3_multi_s(i, ent->scale.x);
+	j = v3_multi_s(j, ent->scale.y);
+
+	// Rotate
+	i = v3_rotate(i, ent->rot);
+	j = v3_rotate(j, ent->rot);
+
+	// Pivot Adjustment: Shift 'pos' from Top-Left to Center
+	Vector3 half_w  = v3_multi_s(i, ent->sprite->width * 0.5f);
+	Vector3 half_h = v3_multi_s(j, ent->sprite->height * 0.5f);
+	Vector3 origin = v3_sub(ent->pos, v3_add(half_w, half_h));
+
+	// Calculate the 4 corners of the destination quadrilateral
+	Vector3 c0 = origin;                                           // Top-Left
+	Vector3 c1 = v3_add(origin, v3_multi_s(i, (float)ent->sprite->width));   // Top-Right
+	Vector3 c2 = v3_add(origin, v3_multi_s(j, (float)ent->sprite->height));  // Bottom-Left
+	Vector3 c3 = v3_add(c1, v3_multi_s(j, (float)ent->sprite->height));       // Bottom-Right
+
+	// Find the Bounding Box (Scan Area) on the screen
+	float min_x = fminf(fminf(c0.x, c1.x), fminf(c2.x, c3.x));
+	float max_x = fmaxf(fmaxf(c0.x, c1.x), fmaxf(c2.x, c3.x));
+	float min_y = fminf(fminf(c0.y, c1.y), fminf(c2.y, c3.y));
+	float max_y = fmaxf(fmaxf(c0.y, c1.y), fmaxf(c2.y, c3.y));
+
+	// Pre-calculate squared lengths of basis vectors
+	float i_mag_sq = (i.x * i.x + i.y * i.y + i.z * i.z);
+	float j_mag_sq = (j.x * j.x + j.y * j.y + j.z * j.z);
+
+	// Optimization: Calculate reciprocals once to avoid division in loops
+	float inv_i_mag_sq = 1.0f / i_mag_sq;
+	float inv_j_mag_sq = 1.0f / j_mag_sq;
+
+	// Step values: how much u and v change per pixel in screen X and Y
+	float du_x = i.x * inv_i_mag_sq;
+	float dv_x = i.y * inv_j_mag_sq;
+	float du_y = j.x * inv_i_mag_sq;
+	float dv_y = j.y * inv_j_mag_sq;
+
+	// Starting u,v for the first pixel (top-left of bounding box)
+	int start_x = (int)min_x;
+	int start_y = (int)min_y;
+	Vector3 start_p = {(float)start_x - origin.x, (float)start_y - origin.y, 0.0f};
+
+	float row_u = (start_p.x * i.x + start_p.y * i.y) * inv_i_mag_sq;
+	float row_v = (start_p.x * j.x + start_p.y * j.y) * inv_j_mag_sq;
+
+	// Loop through every pixel in the bounding box
+	for (int y = start_y; y < (int)max_y; y++) {
+	
+		float u = row_u;
+		float v = row_v;
+
+		for (int x = start_x; x < (int)max_x; x++) {
+
+			// Check if uv coordinates are within the texture bounds
+			if (u >= 0 && u < (float)ent->sprite->width && v >= 0 && v < (float)ent->sprite->height) {
+
+				int tex_x = (int)u;
+				int tex_y = (int)v;
+
+				uint32_t color = ent->sprite->pixels[tex_y * ent->sprite->width + tex_x];
+
+				// Alpha check
+				if ((color >> 24) & 0xFF) { 
+
+					color = apply_tint(color, ent->tint);
+					put_pixel(dest_buff, w, h, rm, x, y, color); 
+				}
+			}
+			
+			// Move to next pixel in the row
+			u += du_x;
+			v += dv_x;
+		}
+
+		// Move to next row
+		row_u += du_y;
+		row_v += dv_y;
+	}
 }
 
 //draw sprite to screen buffer
@@ -299,10 +411,11 @@ void draw_sprite(App *app, Sprite *s, int start_x, int start_y) {
 
 				//Alpha Check (Transparency) Only draw if the Alpha byte isn't 0
 				if ((color & 0xFF000000) != 0) {
-			
+
 					// Calculate index in the big screen buffer
 					int screen_index = screen_y * app->pixel_buffer_w + screen_x;
-					app->pixel_buffer[screen_index] = color;
+					put_pixel(app->pixel_buffer, app->pixel_buffer_w, app->pixel_buffer_h, NORMAL, screen_x, screen_y, color);
+					//app->pixel_buffer[screen_index] = color;
 				}
 			}
 		}
@@ -311,7 +424,7 @@ void draw_sprite(App *app, Sprite *s, int start_x, int start_y) {
 
 //this function takes a Fontmap struct and draws a single char from a sprite sheet contained within the font map
 void draw_char(App *app, Fontmap *f, int start_x, int start_y, char c) {
-	
+
 	char *cp = strchr(f->f_map, c);	//get pointer to first occurrence of char
 	int index = 0;			//default to 0 if not found
 
@@ -334,6 +447,9 @@ void draw_char(App *app, Fontmap *f, int start_x, int start_y, char c) {
 			int src_x = px + x;
 			int src_y = py + y;
 			uint32_t color = f->font_buffer.pixels[src_y * f->font_buffer.width + src_x];
+			
+			//if font pixel is white change it to color stored in the fontmap struct
+			color = (color == 0xFFFFFFFF) ? f->colour : color;
 
 			//Where to draw on the screen (Destination)
 			int screen_x = start_x + x;
@@ -344,11 +460,7 @@ void draw_char(App *app, Fontmap *f, int start_x, int start_y, char c) {
 			if (screen_x >= 0 && screen_x < app->pixel_buffer_w && screen_y >= 0 && screen_y < app->pixel_buffer_h) {
 
 				int screen_index = screen_y * app->pixel_buffer_w + screen_x;
-
-				if (color == 0xffffffff) {
-				
-					app->pixel_buffer[screen_index] = 0xff00ff00;
-				}
+				app->pixel_buffer[screen_index] = color;
 			}
 		}
 	}
@@ -370,37 +482,31 @@ void draw_string(App *app, Fontmap *fm, char *str, int x, int y) {
 //copy the buffer to a Ximage and scale it to the screen size
 void update_ximage(App *app) {
 
-   // 1. Calculate ratios using your struct variables
-    // Source: pixel_buffer_w/h (960x540)
-    // Destination: width/height (1920x1080)
-    double step_x = (double)app->pixel_buffer_w / app->width;
-    double step_y = (double)app->pixel_buffer_h / app->height;
+	// Calculate how many screen pixels one buffer pixel occupies
+	float scale_x = (float)app->width / app->pixel_buffer_w;
+	float scale_y = (float)app->height / app->pixel_buffer_h;
 
-    for (int y = 0; y < app->height; y++) {
-        // Map window row to buffer row
-        int src_y = (int)(y * step_y);
-        
-        // OFFSET CALCULATION:
-        // This is where the 'center' bug lives. We MUST use pixel_buffer_w here.
-        // If app->pixel_buffer_w has been changed to 1920, this pointer 
-        // will jump way past the start of your data.
-        uint32_t *src_row = app->pixel_buffer + (src_y * app->pixel_buffer_w);
+	for (int y = 0; y < app->height; y++) {
 
-        // Map window row to XImage memory
-        uint32_t *dest_row = (uint32_t *)(app->ximage->data + (y * app->ximage->bytes_per_line));
+		// Map current screen row back to the source buffer row
+		int src_y = (int)(y / scale_y);
+		uint32_t *src_row = &app->pixel_buffer[src_y * app->pixel_buffer_w];
 
-        for (int x = 0; x < app->width; x++) {
-            int src_x = (int)(x * step_x);
-            
-            // Copy the pixel
-            dest_row[x] = src_row[src_x];
-        }
-    }
+		// Get the destination row in the XImage
+		uint32_t *dest_row = (uint32_t *)(app->ximage->data + (y * app->ximage->bytes_per_line));
 
-    XPutImage(app->d, app->buffer, app->gc, app->ximage, 0, 0, 0, 0, app->width, app->height);
-
+		for (int x = 0; x < app->width; x++) {
+			// Map current screen column back to the source buffer column
+			int src_x = (int)(x / scale_x);
+	
+			// "Sample" the color from the buffer and drop it into the screen
+			dest_row[x] = src_row[src_x];
+		}
+	}
+	
+	// Upload the XImage (CPU RAM) to the Pixmap (X Server/VRAM) This takes whatever is in ximage->data and puts it in the Pixmap 
+	XPutImage(app->d, app->buffer, app->gc, app->ximage, 0, 0, 0, 0, app->width, app->height);	
 }
-
 
 void draw_pixel_buffer(App *app) {
 	
@@ -412,38 +518,71 @@ void draw_pixel_buffer(App *app) {
 	}
 }
 
-static inline void put_pixel(App *app, int x, int y, uint32_t color) {
+static inline void put_pixel(uint32_t *pix_buff, int w, int h, Render_mode rm, int x, int y, uint32_t colour) {
 
 	//only draw pixel if it is within the bounds of the pixelbuffer
-	if (x >= 0 && x < PBUF_WIDTH && y >= 0 && y < PBUF_HEIGHT) {
+	if (x >= 0 && x < w && y >= 0 && y < h) {
 		
-		app->pixel_buffer[y * PBUF_WIDTH + x] = color;
+		if (rm == NORMAL) {
+			
+			pix_buff[y * PBUF_WIDTH + x] = colour;
+		}
+
+		if (rm == ADDITIVE) {
+
+			//pre exisitng pixel were adding to
+			uint32_t original = pix_buff[y * w + x];
+
+			//seperate the colours into ints so there room to add to them;
+			int or = (original >> 16) & 0xFF;
+			int og = (original >> 8)  & 0xFF;
+			int ob =  original        & 0xFF;
+
+			int r = (colour >> 16) & 0xFF;
+			int g = (colour >> 8)  & 0xFF;
+			int b =  colour        & 0xFF;
+
+			uint8_t nr = (or + r > 255) ? 255 : or + r;
+			uint8_t ng = (og + g > 255) ? 255 : og + g;
+			uint8_t nb = (ob + b > 255) ? 255 : ob + b;
+			
+			//add colour to pixel buffer
+			pix_buff[y * w + x] = (0xFF << 24) | (nr << 16) | (ng << 8) | nb;
+		}
 	}
 }
 
 void draw_filled_circle(App *app, int xc, int yc, int r, uint32_t color) {
-    int x = 0, y = r;
-    int d = 3 - 2 * r;
 
-    while (y >= x) {
-        // Just use a simple loop and the safe helper
-        for (int i = xc - x; i <= xc + x; i++) {
-            put_pixel(app, i, yc + y, color);
-            put_pixel(app, i, yc - y, color);
-        }
-        for (int i = xc - y; i <= xc + y; i++) {
-            put_pixel(app, i, yc + x, color);
-            put_pixel(app, i, yc - x, color);
-        }
+	int x = 0, y = r;
+	int d = 3 - 2 * r;
 
-        if (d < 0) {
-            d = d + 4 * x + 6;
-        } else {
-            d = d + 4 * (x - y) + 10;
-            y--;
-        }
-        x++;
-    }
+	while (y >= x) {
+	
+		// Just use a simple loop and the safe helper
+		for (int i = xc - x; i <= xc + x; i++) {
+			
+			put_pixel(app->pixel_buffer, app->pixel_buffer_w, app->pixel_buffer_h, NORMAL, i, yc + y, color);
+			put_pixel(app->pixel_buffer, app->pixel_buffer_w, app->pixel_buffer_h, NORMAL, i, yc - y, color);
+		}
+		
+		for (int i = xc - y; i <= xc + y; i++) {
+		
+			put_pixel(app->pixel_buffer, app->pixel_buffer_w, app->pixel_buffer_h, NORMAL, i, yc + x, color);
+			put_pixel(app->pixel_buffer, app->pixel_buffer_w, app->pixel_buffer_h, NORMAL, i, yc - x, color);
+		}
+
+		if (d < 0) {
+			
+			d = d + 4 * x + 6;
+		
+		} else {
+			
+			d = d + 4 * (x - y) + 10;
+			y--;
+		}
+		
+		x++;
+	}
 }
-
 

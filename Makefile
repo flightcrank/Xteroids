@@ -1,27 +1,33 @@
-# 1. Compiler and Flags
+# --- Settings ---
 CC = gcc
 CFLAGS = -Wall -Wextra -O2
 LIBS = -lX11 -lm -lpthread -ldl
-
-# 2. Target Name and Source Files
 TARGET = xteroids
 SRCS = xteroids.c graphics.c
-OBJS = $(SRCS:.c=.o)
+ZIG_TARGET = x86_64-linux-gnu.2.17
+RELEASE_NAME = $(TARGET)-linux-x86_64
 
-# 3. Default Rule (The one that runs when you just type 'make')
+# --- Rules ---
 all: $(TARGET)
 
-# 4. Linking the final executable
-$(TARGET): $(OBJS)
-	$(CC) $(OBJS) -o $(TARGET) $(LIBS)
+$(TARGET): $(SRCS)
+	$(CC) $(CFLAGS) $(SRCS) -o $(TARGET) $(LIBS)
 
-# 5. Compiling individual source files into object files
-%.o: %.c
-	$(CC) $(CFLAGS) -c $< -o $@
+# 1. Compile for glibc 2.17 using Zig
+release: clean
+	zig cc -target $(ZIG_TARGET) $(CFLAGS) -O3 $(SRCS) -o $(RELEASE_NAME) $(LIBS) \
+	-I/usr/include -L/usr/lib64 -Wno-macro-redefined -s
 
-# 6. Clean rule to remove compiled files
+# 2. Package binary + assets into a single tarball
+dist: release
+	@echo "Packaging for distribution..."
+	tar -czvf $(RELEASE_NAME).tar.gz $(RELEASE_NAME) assets/
+	@echo "------------------------------------------------"
+	@echo "SUCCESS: Created $(RELEASE_NAME).tar.gz"
+	@echo "------------------------------------------------"
+
 clean:
-	rm -f $(TARGET) $(OBJS)
+	rm -f $(TARGET) $(RELEASE_NAME) $(RELEASE_NAME).tar.gz *.o
 
-# 7. Phony targets (to prevent conflicts with files named 'all' or 'clean')
-.PHONY: all clean
+.PHONY: all clean release dist
+

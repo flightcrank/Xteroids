@@ -12,49 +12,12 @@ typedef enum {
 	AST_LARGE
 } asteroid_size_t;
 
-//This struct bundles everything Xlib needs 
-typedef struct {
-	
-	Display *d;
-	Window w;
-	GC gc;
-	Pixmap buffer;		//back buffer for double buffering
-	XImage *ximage;		//Xlibs wrapper for the pixel buffer
-	uint32_t *pixel_buffer;	//raw pixel buffer to draw to for pixel effects
-	int screen;		//which monitor the window will be on
-	int width;		//width of window
-	int height;		//height of window
-	int pixel_buffer_w;	//width of pixel buffer
-	int pixel_buffer_h;	//height of pixel buffer
-	Atom wmDeleteMessage;
-} App;
-
-//This struct holds sprite data
-typedef struct {
-
-	uint32_t *pixels;
-	int width;
-	int height;
-	int channels;
-} Sprite;
-
-//this struct holds bitmap font data
-typedef struct {
-	
-	//characters as they appear in the font map
-	char *f_map; 
-	int char_width;
-	int char_height;
-	Sprite font_buffer;
-} Fontmap;
-
 //this struct discribes a 3D vector
 typedef struct {
 	
 	float x;
 	float y;
 	float z;
-
 } Vector3;
 
 //Struct for holding the data related to a 3D mesh
