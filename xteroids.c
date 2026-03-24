@@ -27,7 +27,7 @@
 
 #define NUM_ASTEROIDS 39
 #define NUM_BULLETS 4
-#define NUM_STARS 200
+#define NUM_STARS 150
 
 #define SHIP_SPEED_LIMIT 3.5f
 #define SHIP_ACCEL 0.035f
@@ -162,20 +162,20 @@ int main () {
 			usleep((unsigned int)((target_time - time_spent_working) * 1000000));
 		}
 
-		// Calculate potential FPS (how fast it could go)
-		float potential_fps = 1.0f / (float)time_spent_working;
+		//// Calculate potential FPS (how fast it could go)
+		//float potential_fps = 1.0f / (float)time_spent_working;
 
-		// Calculate actual FPS (how fast it is actually going)
-		float actual_fps = 1.0f / delta_time;
+		//// Calculate actual FPS (how fast it is actually going)
+		//float actual_fps = 1.0f / delta_time;
 
-		// Print it every 60 frames so it's readable
-		static int frame_count = 0;
+		//// Print it every 60 frames so it's readable
+		//static int frame_count = 0;
 
-		if (++frame_count >= 60) {
-			
-			printf("Potential FPS: %.2f | Actual FPS: %.2f\n", potential_fps, actual_fps);
-			frame_count = 0;
-		}
+		//if (++frame_count >= 60) {
+		//	
+		//	printf("Potential FPS: %.2f | Actual FPS: %.2f\n", potential_fps, actual_fps);
+		//	frame_count = 0;
+		//}
 	}	
 
 	//free resources use by program		
@@ -195,7 +195,7 @@ void init_noise_tex(GameState *gs) {
 	vn.cell_size = 128;
 	vn.width = 512;
 	vn.height = 512;
-	vn.bias = -180;
+	vn.bias = -166;
 	
 	//create the noise_tex sprite;
 	init_vnoise(&vn, &gs->noise_tex);
