@@ -395,29 +395,21 @@ void draw_sprite_affine(uint32_t *dest_buff, int w, int h, Render_mode rm, Entit
 //draw sprite to screen buffer
 void draw_sprite(App *app, Sprite *s, int start_x, int start_y) {
 
-	for (int y = 0; y < s->height; y++) {
+	int offset_x = start_x % s->width;
+	if (offset_x < 0) offset_x += s->width;
 
-		for (int x = 0; x < s->width; x++) {
+	for (int y = 0; y < app->pixel_buffer_h; y++) {
+	
+		uint32_t *dest_row = &app->pixel_buffer[y * app->pixel_buffer_w];
+		uint32_t *src_row = &s->pixels[y * s->width];
 
-			//determine where we are on the screen
-			int screen_x = start_x + x;
-			int screen_y = start_y + y;
+		for (int x = 0; x < app->pixel_buffer_w; x++) {
 
-			//safety Check (Clipping) don't draw if we are off-screen!
-			if (screen_x >= 0 && screen_x < app->pixel_buffer_w && screen_y >= 0 && screen_y < app->pixel_buffer_h) {
+			int tex_x = x + offset_x;
+			if (tex_x >= s->width) tex_x -= s->width;
 
-				//Get the color from the sprite
-				uint32_t color = s->pixels[y * s->width + x];
-
-				//Alpha Check (Transparency) Only draw if the Alpha byte isn't 0
-				if ((color & 0xFF000000) != 0) {
-
-					// Calculate index in the big screen buffer
-					int screen_index = screen_y * app->pixel_buffer_w + screen_x;
-					put_pixel(app->pixel_buffer, app->pixel_buffer_w, app->pixel_buffer_h, NORMAL, screen_x, screen_y, color);
-					//app->pixel_buffer[screen_index] = color;
-				}
-			}
+			uint32_t color = src_row[tex_x];
+			dest_row[x] = color;
 		}
 	}
 }

@@ -71,6 +71,7 @@ typedef struct {
 	float engine_pitch_t;
 	bool keys[65536];
 	bool space_pressed;
+	float bg_scroll;
 } GameState;
 
 void init_noise_tex(GameState *gs);
@@ -163,19 +164,18 @@ int main () {
 		}
 
 		//// Calculate potential FPS (how fast it could go)
-		//float potential_fps = 1.0f / (float)time_spent_working;
+		float potential_fps = 1.0f / (float)time_spent_working;
 
 		//// Calculate actual FPS (how fast it is actually going)
-		//float actual_fps = 1.0f / delta_time;
+		float actual_fps = 1.0f / delta_time;
 
-		//// Print it every 60 frames so it's readable
-		//static int frame_count = 0;
+		static int frame_count = 0;
 
-		//if (++frame_count >= 60) {
-		//	
-		//	printf("Potential FPS: %.2f | Actual FPS: %.2f\n", potential_fps, actual_fps);
-		//	frame_count = 0;
-		//}
+		if (++frame_count >= 60) {
+		
+			//printf("Potential FPS: %.2f | Actual FPS: %.2f\n", potential_fps, actual_fps);
+			frame_count = 0;
+		}
 	}	
 
 	//free resources use by program		
@@ -209,7 +209,7 @@ void init_noise_tex(GameState *gs) {
 	gs->noise_cloud = create_entity(ENT_SPRITE, 0, 0);
 	gs->noise_cloud.sprite = &gs->noise_tex;
 	gs->noise_cloud.pos = (Vector3) {PBUF_WIDTH / 2, PBUF_HEIGHT / 2, 0.0f};
-	gs->noise_cloud.scale = (Vector3) {4.0f, 2.1f, 0.0f};
+	gs->noise_cloud.scale = (Vector3) {3.75f, 2.1f, 0.0f};
 	gs->noise_cloud.tint = 0xFFFF00FF;
 	
 	//render the noise_tex into a new sprite
@@ -841,7 +841,8 @@ void draw_frame(App *app, GameState *game_state) {
 	
 	//drawing operations every frame
 	clear_screen(app, 0x000000);
-	draw_sprite(app, &game_state->space_fog, 0, 0);
+	draw_sprite(app, &game_state->space_fog, game_state->bg_scroll, 0);
+	game_state->bg_scroll += -0.125f;
 	draw_stars(app, game_state);
 	
 	//draw elements depending on the current game state 
